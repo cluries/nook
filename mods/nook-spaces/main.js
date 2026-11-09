@@ -55,6 +55,9 @@ const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b
 // Herdr ships these Lucide glyphs. Hash the ID so the choice stays stable.
 const SPACE_ICONS = ["folder", "terminal", "layers", "monitor", "files", "git-branch", "server", "file-text"];
 function spaceIcon(id) {
+  const selected = (shared("nook.spaces.icons") ?? {})[id];
+  if (typeof selected === "string" && /^(?:mods\/workspace-chrome|icons)\/[a-zA-Z0-9_-]+\.svg$/.test(selected)) return selected;
+  if (SPACE_ICONS.includes(selected)) return `mods/workspace-chrome/${selected}.svg`;
   let hash = 2166136261;
   for (const c of id) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
   return `mods/workspace-chrome/${SPACE_ICONS[(hash >>> 0) % SPACE_ICONS.length]}.svg`;
@@ -85,6 +88,7 @@ export default class Spaces extends View {
     this.born = {};
     this.pressed = null;
     this.over = null;
+    this.hoveredSpace = null;
     this.machines = [];
     this.metrics = {};
     this.metricsBusy = new Set();
@@ -295,7 +299,15 @@ export default class Spaces extends View {
 
   menu(w) {
     // A popup is as tall as its items; height is only the most.
-    openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
+    openOverlay({ mod: "nook-space-menu", kind: "popup", width: 200, height: 340, props: { tab: "space", target: { id: w.id } } });
+  }
+
+  togglePin(id, cx) {
+    const pins = { ...(shared("nook.spaces.pinned") ?? {}) };
+    if (pins[id]) delete pins[id];
+    else pins[id] = true;
+    setShared("nook.spaces.pinned", pins);
+    cx.notify();
   }
 
   orderingDue(now) {
@@ -346,6 +358,7 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
+    const pins = shared("nook.spaces.pinned") ?? {};
     const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const loading = m => {
@@ -354,10 +367,13 @@ export default class Spaces extends View {
         || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
     const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
-    if (!remote.length && collapsed) return loading(null) && !rows.length ? [loadingRow(null)] : rows.map(draw);
+    if (!remote.length && collapsed) return loading(null) && !rows.length ? [loadingRow(null)] : [...rows.filter(r => pins[r.w.id]), ...rows.filter(r => !pins[r.w.id])].map(draw);
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
-      const mine = rows.filter((r) => (r.w.machine ?? null) === m);
+      const group = rows.filter((r) => (r.w.machine ?? null) === m);
+      // Pinning is a view-only partition: the underlying manual order stays intact.
+      const mine = [...group.filter(r => pins[r.w.id]), ...group.filter(r => !pins[r.w.id])]
+        .map(r => r.tree && !group.some(p => !p.tree && p.g?.repo === r.g?.repo && Boolean(pins[p.w.id]) === Boolean(pins[r.w.id])) ? { ...r, tree: null } : r);
       const repair = this.reconnecting[m];
       const machine = this.machines.find(k => k.name === m) ?? repair?.machine;
       const connected = !m || machine?.state === "connected";
@@ -440,6 +456,9 @@ export default class Spaces extends View {
 
   row({ w, i, g, tree }, t) {
     const on = w.active;
+    const pinned = Boolean((shared("nook.spaces.pinned") ?? {})[w.id]);
+    const chosenIcon = (shared("nook.spaces.icons") ?? {})[w.id];
+    const customIcon = SPACE_ICONS.includes(chosenIcon) || (typeof chosenIcon === "string" && /^(?:mods\/workspace-chrome|icons)\/[a-zA-Z0-9_-]+\.svg$/.test(chosenIcon));
     const fromIndex = this.pressed === null ? -1 : spaces().findIndex(s => s.id === this.pressed);
     const colors = shared("space.colors") ?? {};
     const color = colors[w.id] ?? "ansi6";
@@ -469,6 +488,7 @@ export default class Spaces extends View {
       .rounded(8)
       .when(on, (el) => el.bg(t.selected))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+      .on_hover((hovered, cx) => { this.hoveredSpace = hovered ? w.id : (this.hoveredSpace === w.id ? null : this.hoveredSpace); cx.notify(); })
       .when(this.pressed === w.id && this.over !== w.id, (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === w.id && this.pressed !== w.id, (el) => el.child(
         div().absolute().left(0).right(0).h(2).bg(t.accent)
@@ -481,7 +501,8 @@ export default class Spaces extends View {
       })
       .on_mouse_move((_e, cx) => {
         const source = spaces().find(s => s.id === this.pressed);
-        const over = source && (source.machine ?? null) === (w.machine ?? null) ? w.id : null;
+        const pins = shared("nook.spaces.pinned") ?? {};
+        const over = source && (source.machine ?? null) === (w.machine ?? null) && Boolean(pins[source.id]) === Boolean(pins[w.id]) ? w.id : null;
         if (this.pressed !== null && this.over !== over) {
           this.over = over;
           cx.notify();
@@ -500,13 +521,20 @@ export default class Spaces extends View {
       })
       .on_mouse_down("right", () => this.menu(w))
       .child(h_flex().gap(7).items_center().min_w(0)
-        .when(Boolean(tree), el => el.pl(18).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
+        .when(Boolean(tree) && !customIcon, el => el.pl(18).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
+        .when(Boolean(tree) && customIcon, el => el.pl(18).child(svg(spaceIcon(w.id)).size(13).text_color(fill)))
         .when(!tree, el => el.child(h_flex().size(18).flex_none().items_center().justify_center().child(svg(spaceIcon(w.id)).size(16).text_color(fill))))
         .child(v_flex().flex_1().min_w(0)
           .child(h_flex().items_center().gap(5).min_w(0)
-            .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(w.name))
+            .child(div().min_w(0).truncate().text_color(t.foreground).child(w.name))
             .when(Boolean(status), el => el.child(div().flex_none().text_size(10).text_color(t[w.status]).child(`${status}${count > 1 ? ` ${count}` : ""}`))))
           .child(div().min_w(0).truncate().text_size(10.5).text_color(t.dim).child(details.join(" · ") || " ")))
+        .when(pinned || this.hoveredSpace === w.id, el => el.child(div().id(`pin-${w.id}`).size(20).flex_none().flex().items_center().justify_center().rounded(5).text_color(pinned ? t.accent : t.dim)
+          .tooltip(pinned ? "Unpin space" : "Pin space")
+          .hover(s => s.bg(t.hover).text_color(t.foreground))
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => { cx.stop_propagation(); this.togglePin(w.id, cx); })
+          .child(svg("mods/workspace-chrome/pin.svg").size(12))))
         .child(div().id(`editor-${w.id}`).size(24).flex_none().flex().items_center().justify_center().rounded(5).text_color(t.dim)
           .tooltip(folder ? "Open in editor" : "No current folder")
           .hover(s => s.bg(t.hover).text_color(t.foreground))
@@ -527,6 +555,7 @@ export default class Spaces extends View {
       .when(w.active, (el) => el.bg(t.selected))
       .when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click(() => run("space.select", { id: w.id }))
+      .on_mouse_down("right", () => this.menu(w))
       .child(div().text_color(w.active ? t.foreground : t.muted).child(String(i + 1)))
       .child(div().absolute().right(5).text_color(tone(t, w.status)).child(glyph(w.status))));
   }
