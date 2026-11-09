@@ -34,6 +34,21 @@ const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
 
+// Sample CPU over one second. Memory excludes reclaimable cache on both systems.
+const METRICS = `case "$(uname -s)" in
+Linux)
+  read _ u n s i w q z rest < /proc/stat
+  a=$((u+n+s+i+w+q+z)); b=$((i+w))
+  sleep 1
+  read _ u n s i w q z rest < /proc/stat
+  c=$((u+n+s+i+w+q+z)); d=$((i+w))
+  awk -v total="$((c-a))" -v idle="$((d-b))" '/^MemTotal:/ {t=$2} /^MemAvailable:/ {a=$2} END {if (total>0 && t>0 && a>0) printf "%.0f %.1f %.1f\\n", 100*(total-idle)/total, (t-a)/1048576, t/1048576}' /proc/meminfo ;;
+Darwin)
+  cpu=$(LC_ALL=C top -l 2 -n 0 -s 1 | awk '/CPU usage/ {gsub(/%/, "", $7); idle=$7} END {if (idle != "") printf "%.0f", 100-idle}')
+  total=$(sysctl -n hw.memsize)
+  vm_stat | awk -v cpu="$cpu" -v total="$total" 'NR==1 {gsub(/\\./,"",$8); page=$8} /Pages active:/ {active=$3} /Pages wired down:/ {wired=$4} /Pages occupied by compressor:/ {compressed=$5} END {gsub(/\\./,"",active); gsub(/\\./,"",wired); gsub(/\\./,"",compressed); if (cpu != "" && total>0 && page>0) printf "%s %.1f %.1f\\n", cpu, (active+wired+compressed)*page/1073741824, total/1073741824}' ;;
+esac`;
+
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
@@ -71,14 +86,36 @@ export default class Spaces extends View {
     this.pressed = null;
     this.over = null;
     this.machines = [];
+    this.metrics = {};
+    this.metricsBusy = new Set();
     this.reconnecting = JSON.parse(localStorage.getItem("machines.reconnecting") ?? "{}");
     for (const state of Object.values(this.reconnecting)) state.busy = false;
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
     this.refreshMachines(cx);
+    this.refreshMetrics(cx);
+    cx.timer.every(10000, cx => this.refreshMetrics(cx));
     cx.timer.every(15000, cx => this.refreshMachines(cx));
     // `git status` walks the whole tree, on another machine a process there:
     // only when its answer could have changed (see `due`).
     cx.timer.every(250, (cx) => this.checkNew(cx));
+  }
+
+  refreshMetrics(cx) {
+    const targets = [null, ...machines().filter(m => m.name && m.layout === "ready").map(m => m.name)];
+    for (const on of targets) {
+      const key = on ?? "";
+      if (this.metricsBusy.has(key)) continue;
+      this.metricsBusy.add(key);
+      cx.spawn(async cx => {
+        try {
+          const r = await exec("sh", ["-c", METRICS], { on, timeout: 5000 });
+          const match = r.code === 0 && r.stdout.trim().match(/^(\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)$/);
+          this.metrics[key] = match ? { cpu: match[1], used: match[2], total: match[3] } : null;
+        } catch { this.metrics[key] = null; }
+        this.metricsBusy.delete(key);
+        cx.notify();
+      });
+    }
   }
 
   checkNew(cx) {
@@ -360,7 +397,19 @@ export default class Spaces extends View {
             .child(svg("mods/workspace-chrome/plus.svg").size(10))))
         .when(!collapsed, el => el.child(svg("mods/workspace-chrome/plus.svg").size(12)).child("New space there"));
       const cell = collapsed ? railCell : (el) => el;
-      const items = [cell(head), ...(!collapsed && rebuilt || folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
+      const available = connected && (!m || machines().find(k => k.name === m)?.layout === "ready");
+      const metric = available ? this.metrics[m ?? ""] : null;
+      const status = metric === undefined ? "Loading metrics…" : "Metrics unavailable";
+      const tile = (label, value, color) => h_flex().when(label === "CPU", el => el.w(76).flex_none()).when(label !== "CPU", el => el.flex_1()).min_w(0).h(27).px(8).gap(5).items_center().rounded(5).bg(t.chrome)
+        .child(div().size(5).flex_none().rounded(3).bg(color))
+        .child(div().flex_none().text_size(10).text_color(t.dim).child(label))
+        .child(div().flex_1().min_w(0).text_size(10).text_color(t.foreground).truncate().child(value));
+      const metricsRow = h_flex().id(`machine-metrics-${m ?? "local"}`).px(4).pb(5).gap(4).min_w(0)
+        .when(Boolean(metric), el => el.tooltip(`CPU ${metric.cpu}% · Memory ${metric.used} / ${metric.total} GB`)
+          .child(tile("CPU", `${metric.cpu}%`, t.ansi6))
+          .child(tile("MEM", `${metric.used} / ${metric.total} GB`, t.ansi3)))
+        .when(!metric, el => el.child(div().px(4).text_size(10).text_color(t.dim).child(status)));
+      const items = [cell(head), ...(!collapsed && !folded ? [metricsRow] : []), ...(!collapsed && rebuilt || folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
       if (collapsed) return items;
       return [v_flex().id(`machine-card-${m ?? "local"}`).flex_none().min_w(0).p(4).rounded(8).bg(t.surface)
         .when(Boolean(m), el => el.mt(8)).children(items)];
