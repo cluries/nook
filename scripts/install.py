@@ -16,7 +16,7 @@ GENERATED = {".gitkeep", "gpui-kit.d.ts", "jsconfig.json"}
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", type=Path, default=Path(os.environ.get("HERDR_APP_HOME", "~/.config/herdr-app")).expanduser(), help="Herdr App home (default: HERDR_APP_HOME or ~/.config/herdr-app)")
-    parser.add_argument("--force", action="store_true", help="overwrite files that differ")
+    parser.add_argument("--force", action="store_true", help="accepted for compatibility; differing files are overwritten by default")
     parser.add_argument("--dry-run", action="store_true", help="show changes without writing")
     args = parser.parse_args()
     home = args.home.expanduser()
@@ -35,8 +35,6 @@ def main():
             print(f"unchanged {target}")
         else:
             changes.append((source, target))
-            if target.exists() and not args.force:
-                conflicts.append((target, "different existing file; use --force to overwrite"))
     if conflicts:
         for target, reason in conflicts:
             print(f"conflict  {target}: {reason}", file=sys.stderr)
