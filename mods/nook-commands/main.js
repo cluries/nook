@@ -3,6 +3,7 @@ import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui
 import { props, closeOverlay, shared, setShared, spaces, focused, exec, run, theme } from "herdr";
 
 const KEY = "nook.saved-commands";
+const priorityOf = entry => Number.isSafeInteger(entry?.priority) ? entry.priority : 0;
 
 export default class SavedCommands extends View {
   init(_props, cx) {
@@ -15,13 +16,17 @@ export default class SavedCommands extends View {
     this.background = false;
     this.starting = false;
     this.name = InputState.new({ placeholder: "Name" });
+    this.priority = InputState.new({ placeholder: "0" });
     this.command = TextareaState.new({ placeholder: "e.g. npm run dev", rows: 3 });
   }
 
-  entries() {
+  orderedEntries() {
     const value = shared(KEY);
-    return Array.isArray(value) ? value : [];
+    return (Array.isArray(value) ? value : []).map((entry, index) => ({ entry, index }))
+      .sort((a, b) => priorityOf(a.entry) - priorityOf(b.entry) || a.index - b.index);
   }
+
+  entries() { return this.orderedEntries().map(item => item.entry); }
 
   keyDown(event, cx) {
     if (this.editing !== null || this.deleting !== null || this.starting) return;
@@ -31,6 +36,10 @@ export default class SavedCommands extends View {
     if (event.keystroke === "down") this.selected = (this.selected + 1) % entries.length;
     else if (event.keystroke === "up") this.selected = (this.selected + entries.length - 1) % entries.length;
     else if (event.keystroke === "enter") this.execute(entries[this.selected], cx);
+    else if (/^[1-9]$/.test(event.keystroke) && entries[Number(event.keystroke) - 1]) {
+      this.selected = Number(event.keystroke) - 1;
+      this.execute(entries[this.selected], cx);
+    }
     else return;
     cx.stop_propagation();
     cx.notify();
@@ -61,6 +70,7 @@ export default class SavedCommands extends View {
     this.error = "";
     this.background = entry?.background === true;
     this.name.set_value(entry?.name ?? "");
+    this.priority.set_value(String(priorityOf(entry)));
     this.command.set_value(entry?.command ?? "");
     this.name.focus();
     cx.notify();
@@ -69,11 +79,16 @@ export default class SavedCommands extends View {
   save(cx) {
     const name = this.name.value().trim(), command = this.command.value().trim();
     if (!name || !command) { this.error = "Enter a name and a command."; cx.notify(); return; }
-    const entries = this.entries().slice();
-    if (this.editing === -1) entries.push({ name, command, background: this.background });
-    else if (this.editing >= 0 && this.editing < entries.length) entries[this.editing] = { name, command, background: this.background };
+    const rawPriority = this.priority.value().trim(), priority = Number(rawPriority);
+    if (!/^-?\d+$/.test(rawPriority) || !Number.isSafeInteger(priority)) {
+      this.error = "Enter a whole number for priority."; cx.notify(); return;
+    }
+    const value = shared(KEY), entries = Array.isArray(value) ? value.slice() : [];
+    const index = this.editing === -1 ? entries.length : this.orderedEntries()[this.editing]?.index;
+    if (index === undefined) return;
+    entries[index] = { ...entries[index], name, command, background: this.background, priority };
     setShared(KEY, entries);
-    this.selected = this.editing === -1 ? entries.length - 1 : this.editing;
+    this.selected = this.orderedEntries().findIndex(item => item.index === index);
     this.showList(cx);
     this.error = "";
     cx.notify();
@@ -129,6 +144,7 @@ export default class SavedCommands extends View {
         .bg(index === this.selected ? t.raised : t.popover)
         .id(`command-${index}`).on_click((event, cx) => this.selectRow(index, event, cx))
         .child(h_flex().items_center().gap(8)
+          .when(index < 9, el => el.child(div().w(14).flex_none().text_color(t.dim).child(String(index + 1))))
           .child(div().w(110).flex_none().truncate().font_semibold().tooltip(entry.name).child(entry.name))
           .child(div().flex_1().min_w(0).text_size(12).text_color(t.muted).truncate().tooltip(`${entry.command}\n${entry.background ? "Background" : "Foreground"}`).child(entry.command))
           .child(button(`run-${index}`, "▶", (_e, cx) => this.execute(entry, cx))
@@ -154,10 +170,11 @@ export default class SavedCommands extends View {
         .when(entries.length === 0, x => x.child(div().py(24).text_color(t.muted).child("Save a command to run it again with a keystroke.")))
         .child(v_flex().h(Math.min(320, entries.length * 42)).min_h(0).overflow_y_scrollbar().gap(2).children(rows))
         .child(h_flex().items_center().justify_between().pt(10).border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
-          .child(div().child(this.starting ? "Starting command…" : "↑ ↓ Select    ↵ Run    Esc Close"))
+          .child(div().child(this.starting ? "Starting command…" : "1–9 Run    ↑ ↓ Select    ↵ Run    Esc Close"))
           .child(div().child(entries.length ? `${this.selected + 1} / ${entries.length}` : "No commands"))))
       .when(this.editing !== null, el => el
         .child(field("Name", input(this.name)))
+        .child(field("Priority (smaller comes first)", input(this.priority)))
         .child(field("Shell command", Textarea.new(this.command).h(78).px(10).py(8).rounded(7).border_1()
           .border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12)))
         .child(field("Run mode", h_flex().gap(8)
@@ -167,7 +184,9 @@ export default class SavedCommands extends View {
           .child(div().flex_1().text_color(t.blocked).child("Delete this command?"))
           .child(button("cancel-delete", "Cancel", (_e, cx) => { this.deleting = null; cx.notify(); }))
           .child(button("confirm-delete", "Delete", (_e, cx) => {
-            const next = this.entries().slice(); next.splice(this.deleting, 1); setShared(KEY, next); this.deleting = null; this.showList(cx);
+            const index = this.orderedEntries()[this.deleting]?.index, value = shared(KEY);
+            if (index !== undefined && Array.isArray(value)) { const next = value.slice(); next.splice(index, 1); setShared(KEY, next); }
+            this.deleting = null; this.showList(cx);
           }).text_color(t.blocked))))
         .child(h_flex().items_center().gap(8).pt(10).border_t(1).border_color(t.border)
           .when(this.editing >= 0 && this.deleting === null, x => x.child(button("delete", "Delete", (_e, cx) => { this.deleting = this.editing; cx.notify(); }).text_color(t.blocked)))
