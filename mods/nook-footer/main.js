@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { layout, run, theme, updates } from "herdr";
+import { layout, run, theme, updates, window } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -13,7 +13,9 @@ function find(node, id) {
 
 export default class NookFooter extends View {
   init(_props, cx) {
-    cx.timer.every(1000, cx => cx.notify());
+    cx.timer.every(1000, cx => {
+      if (window().active && (find(layout(), "sidebar")?.size?.px ?? 268) >= 160) cx.notify();
+    });
   }
 
   render() {

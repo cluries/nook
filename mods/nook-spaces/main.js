@@ -89,6 +89,7 @@ export default class Spaces extends View {
     this.checked = {}; // location key -> when it was last looked at
     this.unsure = new Set(); // locations git couldn't answer for (a machine away)
     this.pending = new Set(); // locations to look at next
+    this.checking = new Set(); // locations in the current Git batch
     this.busy = {}; // pane -> an agent working or a program in front of its shell
     this.ready = {}; // machine -> its layout was readable at the last look
     this.at = {}; // space -> its location key at the last look
@@ -151,7 +152,10 @@ export default class Spaces extends View {
     const places = locations(sp, ps);
     for (const s of sp) at[s.id] = places.get(s.id).key;
     const keys = new Set(Object.values(at).filter((k) => JSON.parse(k)[1]));
-    const due = new Set([...keys].filter((k) => !(k in this.git)));
+    // A slow first query still has no cached result. Don't enqueue it again
+    // on every poll; subsequent invalidations below must still get a new pass.
+    const due = new Set([...keys].filter(k => !(k in this.git)
+      && !this.pending.has(k) && !this.checking.has(k)));
     for (const [id, k] of Object.entries(at)) if (this.at[id] && this.at[id] !== k && keys.has(k)) due.add(k);
     this.at = at;
     const spaceOf = {};
@@ -184,9 +188,20 @@ export default class Spaces extends View {
   }
 
   refreshMachines(cx) {
+    if (this.machinesBusy) return;
+    this.machinesBusy = true;
     cx.spawn(async cx => {
-      try { const r = await hc(["machine", "ls", "--json"]); if (r.code === 0) this.machines = (JSON.parse(r.stdout).machines ?? []).filter((m) => !m.temporary); } catch {}
-      cx.notify();
+      try {
+        const r = await hc(["machine", "ls", "--json"]);
+        if (r.code === 0) {
+          const next = (JSON.parse(r.stdout).machines ?? []).filter(m => !m.temporary);
+          if (JSON.stringify(next) !== JSON.stringify(this.machines)) {
+            this.machines = next;
+            cx.notify();
+          }
+        }
+      } catch {}
+      finally { this.machinesBusy = false; }
     });
   }
 
@@ -246,7 +261,11 @@ export default class Spaces extends View {
       while (this.pending.size) {
         const keys = [...this.pending];
         this.pending.clear();
-        for (const key of keys) await this.check(key, cx);
+        this.checking = new Set(keys);
+        for (const key of keys) {
+          try { await this.check(key, cx); }
+          finally { this.checking.delete(key); }
+        }
       }
       const used = new Set(Object.values(this.git).filter(Boolean).map((g) => JSON.parse(g.repo)).filter(([on]) => !on).map(([, repo]) => repo));
       for (const repo of this.watching) if (!used.has(repo)) this.watching.delete(repo);
