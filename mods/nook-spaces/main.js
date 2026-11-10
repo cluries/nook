@@ -3,7 +3,7 @@
 // its first terminal is in now, only where unusual: branch, ahead/behind. Agent state lives in the agents list, not here. Click to
 // switch, right-click for its menu, drag to reorder.
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
@@ -45,20 +45,108 @@ const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
 
-// Sample CPU over one second. Memory excludes reclaimable cache on both systems.
+// Linux returns one counter snapshot; macOS reads its persistent macmon service.
 const METRICS = `case "$(uname -s)" in
 Linux)
-  read _ u n s i w q z rest < /proc/stat
-  a=$((u+n+s+i+w+q+z)); b=$((i+w))
-  sleep 1
-  read _ u n s i w q z rest < /proc/stat
-  c=$((u+n+s+i+w+q+z)); d=$((i+w))
-  awk -v total="$((c-a))" -v idle="$((d-b))" '/^MemTotal:/ {t=$2} /^MemAvailable:/ {a=$2} END {if (total>0 && t>0 && a>0) printf "%.0f %.1f %.1f\\n", 100*(total-idle)/total, (t-a)/1048576, t/1048576}' /proc/meminfo ;;
+  read -r boot < /proc/sys/kernel/random/boot_id || exit 1
+  awk -v boot="$boot" '
+    /^cpu / { for (i=2; i<=9; i++) cpu[i-2]=$i; seen=1 }
+    /^MemTotal:/ {total=$2}
+    /^MemAvailable:/ {available=$2; have_available=1}
+    /^Buffers:/ {buffers=$2}
+    /^Cached:/ {cached=$2}
+    /^SReclaimable:/ {reclaimable=$2}
+    /^SwapTotal:/ {swap_total=$2}
+    /^SwapFree:/ {swap_free=$2}
+    END {
+      if (!seen || total<=0 || !have_available) exit 1
+      printf "{\\"linux\\":true,\\"boot\\":\\"%s\\",\\"counters\\":[", boot
+      for (i=0; i<8; i++) printf "%s%.0f", i ? "," : "", cpu[i]
+      printf "],\\"totalKiB\\":%.0f,\\"availableKiB\\":%.0f,\\"cacheKiB\\":%.0f,\\"swapTotalKiB\\":%.0f,\\"swapFreeKiB\\":%.0f}\\n", total, available, buffers+cached+reclaimable, swap_total, swap_free
+    }' /proc/stat /proc/meminfo ;;
 Darwin)
-  cpu=$(LC_ALL=C top -l 2 -n 0 -s 1 | awk '/CPU usage/ {gsub(/%/, "", $7); idle=$7} END {if (idle != "") printf "%.0f", 100-idle}')
-  total=$(sysctl -n hw.memsize)
-  vm_stat | awk -v cpu="$cpu" -v total="$total" 'NR==1 {gsub(/\\./,"",$8); page=$8} /Pages active:/ {active=$3} /Pages wired down:/ {wired=$4} /Pages occupied by compressor:/ {compressed=$5} END {gsub(/\\./,"",active); gsub(/\\./,"",wired); gsub(/\\./,"",compressed); if (cpu != "" && total>0 && page>0) printf "%s %.1f %.1f\\n", cpu, (active+wired+compressed)*page/1073741824, total/1073741824}' ;;
+  directory="/tmp/nook-macmon-$1"
+  if [ "$3" = stop ]; then
+    [ ! -d "$directory" ] || touch "$directory/stop"
+    exit 0
+  fi
+  if [ ! -d "$directory" ]; then
+    binary=$(command -v macmon) || binary=
+    [ -n "$binary" ] || { [ ! -x /opt/homebrew/bin/macmon ] || binary=/opt/homebrew/bin/macmon; }
+    [ -n "$binary" ] || { [ ! -x /usr/local/bin/macmon ] || binary=/usr/local/bin/macmon; }
+    [ -n "$binary" ] || exit 127
+    (umask 077; mkdir "$directory") || exit 1
+    touch "$directory/lease" "$directory/born"
+    nohup sh -c '
+      directory=$1
+      child=
+      cleanup() {
+        trap - EXIT HUP INT TERM
+        if [ -n "$child" ]; then kill "$child" 2>/dev/null; wait "$child" 2>/dev/null; fi
+        rm -f "$directory/lease" "$directory/born" "$directory/stop" "$directory/log"
+        rmdir "$directory" 2>/dev/null
+      }
+      trap cleanup EXIT
+      trap "exit 0" HUP INT TERM
+      "$2" serve --host 127.0.0.1 --port "$3" -i 2000 >"$directory/log" 2>&1 &
+      child=$!
+      while kill -0 "$child" 2>/dev/null && [ ! -f "$directory/stop" ]; do
+        modified=$(stat -f %m "$directory/lease") || break
+        now=$(date +%s)
+        [ "$((now-modified))" -lt 20 ] || break
+        sleep 2
+      done
+    ' nook-macmon "$directory" "$binary" "$2" </dev/null >/dev/null 2>&1 &
+    exit 0
+  fi
+  touch "$directory/lease" || exit 1
+  curl --silent --show-error --fail --max-time 1 "http://127.0.0.1:$2/json" || {
+    born=$(stat -f %m "$directory/born") || exit 1
+    now=$(date +%s)
+    [ "$((now-born))" -lt 8 ] || touch "$directory/stop"
+    exit 1
+  } ;;
 esac`;
+
+// Keep macmon's active residency distinct from its frequency-scaled ratio.
+export function parseMetrics(stdout, previous = null) {
+  const text = stdout.trim();
+  if (text.startsWith("{")) {
+    const data = JSON.parse(text);
+    if (data.linux === true) {
+      const { counters, boot, totalKiB, availableKiB, cacheKiB, swapTotalKiB, swapFreeKiB } = data;
+      if (!Array.isArray(counters) || counters.length !== 8
+        || !counters.every(value => Number.isSafeInteger(value) && value >= 0)
+        || typeof boot !== "string" || !boot
+        || !Number.isSafeInteger(totalKiB) || totalKiB <= 0
+        || ![availableKiB, cacheKiB, swapTotalKiB, swapFreeKiB].every(value => Number.isSafeInteger(value) && value >= 0)
+        || availableKiB > totalKiB || swapFreeKiB > swapTotalKiB) return null;
+      let cpu = null;
+      if (previous?.boot === boot) {
+        const delta = counters.map((value, index) => value - previous.counters[index]);
+        const total = delta.reduce((sum, value) => sum + value, 0);
+        // guest/guest_nice are already included in user/nice; do not add them.
+        // Preserve the existing idle+iowait convention, including steal in total.
+        if (delta.every(value => value >= 0) && total > 0)
+          cpu = (100 * (total - delta[3] - delta[4]) / total).toFixed(0);
+      }
+      return { linux: true, boot, counters, cpu, used: ((totalKiB - availableKiB) / 1048576).toFixed(1),
+        total: (totalKiB / 1048576).toFixed(1),
+        available: (availableKiB / 1048576).toFixed(1), cache: (cacheKiB / 1048576).toFixed(1),
+        swapUsed: ((swapTotalKiB - swapFreeKiB) / 1048576).toFixed(1),
+        swapTotal: (swapTotalKiB / 1048576).toFixed(1), temperature: null };
+    }
+    const cpu = data.cpu_active_ratio, used = data.memory?.ram_usage, total = data.memory?.ram_total;
+    if (![cpu, used, total].every(value => typeof value === "number" && Number.isFinite(value))
+      || cpu < 0 || cpu > 1 || used < 0 || total <= 0 || used > total) return null;
+    const temperature = data.temp?.cpu_temp_avg;
+    return { mac: true, timestamp: data.timestamp, cpu: (cpu * 100).toFixed(0), used: (used / 1073741824).toFixed(1),
+      total: (total / 1073741824).toFixed(1),
+      temperature: typeof temperature === "number" && Number.isFinite(temperature) && temperature > 0
+        ? temperature.toFixed(1) : null };
+  }
+  return null;
+}
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
@@ -103,13 +191,17 @@ export default class Spaces extends View {
     this.hoveredSpace = null;
     this.machines = [];
     this.metrics = {};
+    this.temperatureHistory = {};
     this.metricsBusy = new Set();
+    this.metricServices = {};
+    this.metricLastPoll = {};
+    this.metricsClosed = false;
     this.reconnecting = JSON.parse(localStorage.getItem("machines.reconnecting") ?? "{}");
     for (const state of Object.values(this.reconnecting)) state.busy = false;
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
     this.refreshMachines(cx);
     this.refreshMetrics(cx);
-    cx.timer.every(10000, cx => this.refreshMetrics(cx));
+    cx.timer.every(2000, cx => this.refreshMetrics(cx));
     cx.timer.every(15000, cx => this.refreshMachines(cx));
     // `git status` walks the whole tree, on another machine a process there:
     // only when its answer could have changed (see `due`).
@@ -117,21 +209,111 @@ export default class Spaces extends View {
   }
 
   refreshMetrics(cx) {
+    if (this.metricsClosed) return;
     const targets = [null, ...machines().filter(m => m.name && m.layout === "ready").map(m => m.name)];
+    const available = new Set(targets.map(on => on ?? ""));
+    for (const key of Object.keys(this.metrics)) {
+      if (!available.has(key) && this.metrics[key] !== null) {
+        this.metrics[key] = null;
+        if (this.metricServices[key]) this.metricServices[key].linuxBaseline = null;
+        this.temperatureHistory[key] = [];
+        cx.notify();
+      }
+    }
     for (const on of targets) {
       const key = on ?? "";
-      if (this.metricsBusy.has(key)) continue;
+      const now = Date.now();
+      if (this.metricsBusy.has(key) || now - (this.metricLastPoll[key] ?? 0) < 1900) continue;
+      this.metricLastPoll[key] = now;
+      const service = this.metricServices[key] ??= {
+        token: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+        port: 49152 + Math.floor(Math.random() * 16000),
+      };
       this.metricsBusy.add(key);
       cx.spawn(async cx => {
         try {
-          const r = await exec("sh", ["-c", METRICS], { on, timeout: 5000 });
-          const match = r.code === 0 && r.stdout.trim().match(/^(\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)$/);
-          this.metrics[key] = match ? { cpu: match[1], used: match[2], total: match[3] } : null;
-        } catch { this.metrics[key] = null; }
-        this.metricsBusy.delete(key);
-        cx.notify();
+          const visible = window().active && !narrow() && !this.folded.has(key);
+          // Keep history complete while hidden; only suppress metric redraws.
+          const r = await exec("sh", ["-c", METRICS, "nook-metrics", service.token, String(service.port), "read"], { on, timeout: 5000 });
+          if (this.metricsClosed) return;
+          // An empty successful reply means the service has just started.
+          if (r.code === 0 && !r.stdout.trim()) {
+            service.mac = true;
+            if (!this.metrics[key]) {
+              this.metrics[key] = { mac: true, starting: true };
+              if (visible) cx.notify();
+            }
+            return;
+          }
+          if (on && !machines().some(machine => machine.name === on && machine.layout === "ready")) {
+            service.linuxBaseline = null;
+            return;
+          }
+          const parsed = r.code === 0 ? parseMetrics(r.stdout, service.linuxBaseline) : null;
+          service.linuxBaseline = parsed?.linux ? parsed : null;
+          let metric = parsed;
+          if (parsed?.linux) {
+            const { counters, boot, ...display } = parsed;
+            metric = display;
+          }
+          if (metric?.mac) service.mac = true;
+          if (metric?.mac && (!Number.isFinite(Date.parse(metric.timestamp)) || Date.now() - Date.parse(metric.timestamp) > 10000))
+            throw new Error("Stale macmon snapshot");
+          const previous = this.temperatureHistory[key] ?? [];
+          const sampled = metric?.mac ? Date.parse(metric.timestamp) : Date.now();
+          const fresh = metric?.temperature && previous.at(-1)?.time !== sampled;
+          this.temperatureHistory[key] = metric?.temperature
+            ? [...previous.filter(point => sampled - point.time <= 300000), ...(fresh ? [{ time: sampled, value: Number(metric.temperature) }] : [])]
+            : [];
+          if (fresh || JSON.stringify(this.metrics[key]) !== JSON.stringify(metric)) {
+            this.metrics[key] = metric;
+            if (window().active && !narrow() && !this.folded.has(key)) cx.notify();
+          }
+        } catch {
+          service.linuxBaseline = null;
+          if (service.mac && !this.metricsClosed) {
+            await exec("sh", ["-c", 'directory="/tmp/nook-macmon-$1"; [ ! -d "$directory" ] || touch "$directory/stop"',
+              "nook-metrics", service.token], { on, timeout: 1000 }).catch(() => {});
+          }
+          if (!this.metricsClosed && this.metrics[key] !== null) {
+            this.temperatureHistory[key] = [];
+            this.metrics[key] = null;
+            cx.notify();
+          }
+        } finally { this.metricsBusy.delete(key); }
       });
     }
+  }
+
+  async close() {
+    this.metricsClosed = true;
+    await Promise.allSettled(Object.entries(this.metricServices).map(([key, service]) =>
+      exec("sh", ["-c", 'directory="/tmp/nook-macmon-$1"; [ ! -d "$directory" ] || touch "$directory/stop"',
+        "nook-metrics", service.token], { on: key || null, timeout: 1000 })));
+  }
+
+  temperatureRow(key, metric, t) {
+    const points = this.temperatureHistory[key] ?? [];
+    const end = points.at(-1)?.time ?? Date.now();
+    const path = PathBuilder.stroke(1.5);
+    let connected = false;
+    let lastTime = 0;
+    for (const point of points) {
+      // Fixed time and temperature scales keep successive samples comparable.
+      const x = `${2 + 96 * (1 - (end - point.time) / 300000)}%`;
+      const y = `${94 - 88 * Math.max(0, Math.min(1, point.value / 120))}%`;
+      if (!connected || point.time - lastTime > 6000) path.move_to(x, y);
+      else path.line_to(x, y);
+      connected = true;
+      lastTime = point.time;
+    }
+    return h_flex().px(4).pb(5).gap(6).items_center()
+      .tooltip("CPU temperature · last 5 minutes · 0–120 °C · sampled every 2 seconds")
+      .child(div().flex_1().min_w(0).h(27).rounded(5).bg(t.chrome).border_1().border_color(t.border)
+        .when(points.length > 1, el => el.child(globalThis.window.paint_path(path.build(), t.ansi3).size_full())))
+      .child(h_flex().w(60).h(27).px(6).flex_none().items_center().justify_end()
+        .rounded(5).bg(t.chrome).border_1().border_color(t.border).text_size(10).text_color(t.foreground)
+        .child(metric.temperature ? `${metric.temperature} °C` : "Unavailable"));
   }
 
   checkNew(cx) {
@@ -470,18 +652,19 @@ export default class Spaces extends View {
         .when(!collapsed, el => el.child(svg("mods/workspace-chrome/plus.svg").size(12)).child("New space there"));
       const cell = collapsed ? railCell : (el) => el;
       const available = connected && (!m || machineLayouts.get(m) === "ready");
-      const metric = available ? this.metrics[m ?? ""] : null;
+      const stored = available ? this.metrics[m ?? ""] : null;
+      const metric = stored?.starting ? undefined : stored;
       const status = metric === undefined ? "Loading metrics…" : "Metrics unavailable";
       const tile = (label, value, color) => h_flex().when(label === "CPU", el => el.w(76).flex_none()).when(label !== "CPU", el => el.flex_1()).min_w(0).h(27).px(8).gap(5).items_center().rounded(5).bg(t.chrome)
         .child(div().size(5).flex_none().rounded(3).bg(color))
         .child(div().flex_none().text_size(10).text_color(t.dim).child(label))
         .child(div().flex_1().min_w(0).text_size(10).text_color(t.foreground).truncate().child(value));
       const metricsRow = h_flex().id(`machine-metrics-${m ?? "local"}`).px(4).pb(5).gap(4).min_w(0)
-        .when(Boolean(metric), el => el.tooltip(`CPU ${metric.cpu}% · Memory ${metric.used} / ${metric.total} GB`)
-          .child(tile("CPU", `${metric.cpu}%`, t.ansi6))
-          .child(tile("MEM", `${metric.used} / ${metric.total} GB`, t.ansi3)))
+        .when(Boolean(metric), el => el.tooltip(`CPU ${metric.cpu === null ? "sampling…" : `${metric.cpu}%`} · Memory ${metric.used} / ${metric.total} GiB${metric.linux ? ` · Available ${metric.available} GiB · Buffers/cache ${metric.cache} GiB · Swap ${metric.swapUsed} / ${metric.swapTotal} GiB` : ""}${metric.temperature ? ` · CPU temperature ${metric.temperature} °C` : ""}`)
+          .child(tile("CPU", metric.cpu === null ? "…" : `${metric.cpu}%`, t.ansi6))
+          .child(tile("MEM", `${metric.used} / ${metric.total} GiB`, t.ansi3)))
         .when(!metric, el => el.child(div().px(4).text_size(10).text_color(t.dim).child(status)));
-      const items = [cell(head), ...(!collapsed && !folded ? [metricsRow] : []), ...(!collapsed && rebuilt || folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
+      const items = [cell(head), ...(!collapsed && !folded ? [metricsRow, ...(metric?.mac ? [this.temperatureRow(m ?? "", metric, t)] : [])] : []), ...(!collapsed && rebuilt || folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
       if (collapsed) return items;
       return [v_flex().id(`machine-card-${m ?? "local"}`).flex_none().min_w(0).p(4).rounded(8).bg(t.surface)
         .when(Boolean(m), el => el.mt(8)).children(items)];
