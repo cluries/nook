@@ -36,7 +36,7 @@ export default class Tabs extends View {
 
   openCommands() {
     const target = focused();
-    openOverlay({ mod: "nook-commands", kind: "dialog", width: 500, height: 480, props: { space: target?.space, cwd: target?.cwd } });
+    openOverlay({ mod: "nook-commands", kind: "dialog", width: 500, height: 480, props: { space: target?.space, tab: target?.tab, cwd: target?.cwd } });
   }
 
   // The side panel is remembered per space: switching shows that space's choice
