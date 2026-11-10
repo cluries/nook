@@ -111,26 +111,26 @@ export default class Tabs extends View {
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
-      return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
-        .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
+      return h_flex().id(`panel-${id}`).size(26).flex_none().items_center().justify_center().rounded(5)
+        .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.dim)
         .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
-        }).child(svg(icon).size(14)).child(label);
+        }).tooltip(label).child(svg(icon).size(15));
     };
     return h_flex().size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().children(shown.map(item)))
-      .child(h_flex().h(24).px(8).mr(8).gap(5).items_center().rounded(6)
-        .bg(needs > 0 ? t.blocked + "26" : t.raised)
-        .text_color(needs > 0 ? t.blocked : t.muted).text_size(12).font_semibold()
+      .child(h_flex().h(26).px(6).gap(4).items_center().rounded(5)
+        .bg(needs > 0 ? t.blocked + "26" : t.chrome)
+        .text_color(needs > 0 ? t.blocked : t.dim).text_size(12).font_semibold()
         .tooltip(`${needs} agents need attention`)
         .child(svg("mods/nook-tabs/person.svg").size(14))
         .child(String(needs)))
       .child(button("saved-commands", svg("mods/workspace-chrome/terminal.svg").size(15), () => this.openCommands()).tooltip("Saved commands (⌘R)"))
-      .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
+      .child(button("tab-new", svg("mods/workspace-chrome/plus.svg").size(15), () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })).tooltip("New tab"))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
