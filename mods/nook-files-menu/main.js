@@ -1,5 +1,5 @@
-import { View, div } from "gpui-kit";
-import { v_flex } from "gpui-base";
+import { View, div, svg, image } from "gpui-kit";
+import { v_flex, h_flex } from "gpui-base";
 import { closeOverlay, exec, hc, props, theme, notify } from "herdr";
 
 const ITEMS = ["Open With Zed", "Open With VSCode", "Copy Relative Path"];
@@ -15,7 +15,7 @@ function remoteUri(editor, target, path) {
 
 export default class FilesMenu extends View {
   init(_props, cx) {
-    this.at = 0;
+    this.at = -1;
     this.handle = cx.focus_handle();
     this.handle.focus();
   }
@@ -59,14 +59,20 @@ export default class FilesMenu extends View {
     return v_flex().id("files-menu").track_focus(this.handle).w_full().p(5).bg(t.popover).text_size(12.8)
       .on_key_down((e, cx) => {
         if (e.key === "down") this.at = (this.at + 1) % ITEMS.length;
-        else if (e.key === "up") this.at = (this.at + ITEMS.length - 1) % ITEMS.length;
-        else if (e.key === "enter") this.choose(this.at, cx);
+        else if (e.key === "up") this.at = this.at < 0 ? ITEMS.length - 1 : (this.at + ITEMS.length - 1) % ITEMS.length;
+        else if (e.key === "enter" && this.at >= 0) this.choose(this.at, cx);
         else if (e.key === "escape") closeOverlay(props().overlay);
         else return;
         cx.notify();
       })
-      .children(ITEMS.map((label, index) => div().id(`files-menu-${index}`).h(31).px(8).rounded(7)
+      .children(ITEMS.map((label, index) => h_flex().id(`files-menu-${index}`).h(31).px(8).gap(9).items_center().rounded(7)
         .text_color(t.foreground).when(index === this.at, el => el.bg(t.selected))
-        .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.choose(index, cx)).child(label)));
+        .on_hover((hovered, cx) => {
+          const next = hovered ? index : (this.at === index ? -1 : this.at);
+          if (next !== this.at) { this.at = next; cx.notify(); }
+        }).on_click((_e, cx) => this.choose(index, cx))
+        .child(index === 2 ? svg("mods/workspace-chrome/files.svg").size(14).flex_none().text_color(t.muted)
+          : image(`mods/nook-files-menu/${index === 0 ? "zed" : "vscode"}.png`).size(16).flex_none())
+        .child(div().flex_1().child(label))));
   }
 }

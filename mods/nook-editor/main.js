@@ -1,5 +1,5 @@
-import { View, div } from "gpui-kit";
-import { v_flex } from "gpui-base";
+import { View, div, image } from "gpui-kit";
+import { v_flex, h_flex } from "gpui-base";
 import { closeOverlay, exec, hc, props, theme } from "herdr";
 
 const EDITORS = ["Visual Studio Code", "Zed"];
@@ -59,8 +59,10 @@ export default class EditorPicker extends View {
       .child(div().px(6).text_size(11).text_color(t.dim).child("Open folder in"))
       .when(this.loading, el => el.child(div().p(6).text_color(t.muted).child("Looking for editors…")))
       .when(!this.loading && !this.installed.length, el => el.child(div().p(6).text_color(t.muted).child("VS Code and Zed were not found.")))
-      .children(this.installed.map(name => div().id(`open-${name}`).px(6).py(5).text_size(12).rounded(5).text_color(t.foreground)
-        .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.open(name, cx)).child(name)))
+      .children(this.installed.map(name => h_flex().id(`open-${name}`).h(31).px(6).gap(9).items_center().text_size(12).rounded(5).text_color(t.foreground)
+        .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.open(name, cx))
+        .child(image(`mods/nook-files-menu/${name === "Zed" ? "zed" : "vscode"}.png`).size(16).flex_none())
+        .child(div().child(name))))
       .when(Boolean(this.error), el => el.child(div().p(6).text_size(11).text_color(t.blocked).child(this.error)));
   }
 }
