@@ -1,7 +1,7 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, v_resizable, resizable_panel, Editor, EditorState, TextView, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, appHome } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, appHome, run, notify } from "herdr";
 import ICONS from "./icons.js";
 import { indexFiles, findMatches } from "./search.js";
 import { searchPreview } from "./preview-search.js";
@@ -251,7 +251,8 @@ export default class Files extends View {
         : mark === "A" ? (dark ? t.ansi10 : t.ansi2)
         : mark === "D" || mark === "U" ? (dark ? t.ansi9 : t.ansi1) : (dark ? t.ansi11 : t.ansi3);
       const markLabel = { "?": "Untracked", A: "Added", M: "Modified", D: "Deleted", U: "Conflict" }[mark];
-      return h_flex().id(`file-${path}`).h(26).flex_none().pl(6 + depth * 16).pr(6).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
+      return h_flex().id(`file-${path}`).w_full().h(26).flex_none().pl(6 + depth * 16).pr(6).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
+        .on_hover((hovered, cx) => { const next = hovered ? path : (this.hoveredFile === path ? null : this.hoveredFile); if (next !== this.hoveredFile) { this.hoveredFile = next; cx.notify(); } })
         .when(path === this.file && !entry.dir, el => el.bg(t.selected))
         .on_click((_e, cx) => {
           if (entry.dir && search) {
@@ -268,12 +269,27 @@ export default class Files extends View {
         })
         .child(entry.dir ? svg(`mods/nook-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(image(fileIcon(path, entry.dir, open, dark)).size(16).flex_none())
-        .child(div().min_w(0).truncate().when(ignored, el => el.text_color(t.dim).tooltip("Ignored by Git"))
-          .when(Boolean(mark), el => el.text_color(markColor)).child(label))
-        .when(Boolean(mark), el => el.child(div().size(7).flex_none().rounded(7)
-          .when(mark === "?", dot => dot.border_1().border_color(markColor))
-          .when(mark !== "?", dot => dot.bg(markColor))
-          .tooltip(entry.dir ? `Contains changes: ${markLabel}` : markLabel)));
+        .child(h_flex().min_w(0).items_center().gap(7)
+          .child(div().min_w(0).truncate().when(ignored, el => el.text_color(t.dim).tooltip("Ignored by Git"))
+            .when(Boolean(mark), el => el.text_color(markColor)).child(label))
+          .when(Boolean(mark), el => el.child(div().size(7).flex_none().rounded(7)
+            .when(mark === "?", dot => dot.border_1().border_color(markColor))
+            .when(mark !== "?", dot => dot.bg(markColor))
+            .tooltip(entry.dir ? `Contains changes: ${markLabel}` : markLabel))))
+        .when(!entry.dir && this.hoveredFile === path, el => el.child(h_flex().id(`insert-path-${path}`).size(20).flex_none().items_center().justify_center().rounded(4)
+          .cursor_pointer().hover(s => s.bg(t.raised)).tooltip("Insert relative path")
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => {
+            cx.stop_propagation();
+            const terminal = focused()?.terminal;
+            if (!terminal || !this.current(this.context)) {
+              notify({ title: "Could not insert path", body: "Focus the target terminal and try again.", level: "error" });
+              return;
+            }
+            cx.write_to_clipboard(` ${path} `);
+            run("pane.focus", { terminal });
+            run("terminal.paste");
+          }).child(svg("mods/nook-files-menu/insert-path.svg").size(14).text_color(t.muted))));
   }
 
   rows(prefix, depth, out, t) {
