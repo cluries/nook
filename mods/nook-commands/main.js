@@ -1,5 +1,5 @@
-import { View, div } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input } from "gpui-base";
+import { View, div, svg } from "gpui-kit";
+import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { props, closeOverlay, shared, setShared, spaces, focused, exec, run, theme } from "herdr";
 
 const KEY = "nook.saved-commands";
@@ -15,7 +15,7 @@ export default class SavedCommands extends View {
     this.background = false;
     this.starting = false;
     this.name = InputState.new({ placeholder: "Name" });
-    this.command = InputState.new({ placeholder: "Shell command" });
+    this.command = TextareaState.new({ placeholder: "e.g. npm run dev", rows: 3 });
   }
 
   entries() {
@@ -110,46 +110,63 @@ export default class SavedCommands extends View {
     const button = (id, label, action) => div().id(id).h(30).px(9).flex().items_center().rounded(6)
       .text_color(t.foreground).hover(s => s.bg(t.hover)).on_click((event, cx) => { cx.stop_propagation(); action(event, cx); }).child(label);
     const input = state => Input.new(state).h(34).px(9).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground);
-    const rows = entries.map((entry, index) => {
-      return v_flex().h(this.deleting === index ? 111 : 75).flex_none().pb(5).child(
-        v_flex().size_full().p(8).gap(5).rounded(7).bg(index === this.selected ? t.selected : t.raised)
-          .id(`command-${index}`).on_click((_e, cx) => { this.selected = index; this.handle.focus(); cx.notify(); })
-          .child(h_flex().items_center().gap(5)
-            .child(div().flex_1().min_w(0).truncate().font_semibold().child(entry.name))
-            .child(button(`run-${index}`, "Run", (_e, cx) => this.execute(entry, cx)))
-            .child(button(`edit-${index}`, "Edit", (_e, cx) => this.edit(index, cx)))
-            .child(button(`delete-${index}`, "Delete", (_e, cx) => { this.selected = index; this.deleting = index; this.handle.focus(); cx.notify(); })))
-          .child(div().text_color(t.dim).truncate().child(`${entry.background ? "Background" : "Foreground"} · ${entry.command}`))
-          .when(this.deleting === index, x => x.child(h_flex().items_center().gap(6)
-            .child(div().flex_1().text_color(t.blocked).child("Delete this command?"))
-            .child(button(`cancel-delete-${index}`, "Cancel", (_e, cx) => { this.deleting = null; this.handle.focus(); cx.notify(); }))
-            .child(button(`confirm-delete-${index}`, "Delete", (_e, cx) => {
-              const next = this.entries().slice(); next.splice(index, 1); setShared(KEY, next); this.deleting = null; this.showList(cx);
-            })))));
-    });
+    const iconButton = (id, icon, label, action) => button(id,
+      svg(`mods/workspace-chrome/${icon}.svg`).size(14), action).px(7).text_color(t.muted).tooltip(label);
+    const rows = entries.map((entry, index) =>
+      v_flex().flex_none().p(10).gap(6).rounded(8).border_1()
+        .border_color(index === this.selected ? t.accent : t.border)
+        .bg(index === this.selected ? t.raised : t.popover)
+        .id(`command-${index}`).on_click((_e, cx) => { this.selected = index; this.handle.focus(); cx.notify(); })
+        .child(h_flex().items_center().gap(6)
+          .child(div().flex_1().min_w(0).truncate().font_semibold().child(entry.name))
+          .child(div().text_size(10).text_color(t.muted).px(6).py(2).rounded(4).bg(t.chrome)
+            .child(entry.background ? "Background" : "Foreground"))
+          .child(button(`run-${index}`, "Run ↵", (_e, cx) => this.execute(entry, cx))
+            .text_color(index === this.selected ? t.accent : t.muted))
+          .child(iconButton(`edit-${index}`, "square-pen", "Edit command", (_e, cx) => this.edit(index, cx)))
+          .child(button(`delete-${index}`, "Delete", (_e, cx) => { this.selected = index; this.deleting = index; this.handle.focus(); cx.notify(); })
+            .text_size(11).text_color(t.dim)))
+        .child(div().text_size(11).text_color(t.muted).truncate().tooltip(entry.command).child(entry.command))
+        .when(this.deleting === index, x => x.child(h_flex().items_center().gap(6).pt(6).border_t(1).border_color(t.border)
+          .child(div().flex_1().text_color(t.blocked).child("Delete this command?"))
+          .child(button(`cancel-delete-${index}`, "Cancel", (_e, cx) => { this.deleting = null; this.handle.focus(); cx.notify(); }))
+          .child(button(`confirm-delete-${index}`, "Delete", (_e, cx) => {
+            const next = this.entries().slice(); next.splice(index, 1); setShared(KEY, next); this.deleting = null; this.showList(cx);
+          }).text_color(t.blocked)))));
+    const field = (label, control) => v_flex().gap(6).child(div().text_size(11).text_color(t.muted).child(label)).child(control);
+    const mode = (background, title, detail) => v_flex().flex_1().min_w(0).p(9).gap(4).rounded(7).border_1()
+      .border_color(this.background === background ? t.accent : t.border)
+      .bg(this.background === background ? t.raised : t.popover)
+      .id(`mode-${background ? "background" : "foreground"}`)
+      .on_click((_e, cx) => { this.background = background; cx.notify(); })
+      .child(div().font_semibold().child(`${this.background === background ? "● " : ""}${title}`))
+      .child(div().text_size(11).text_color(t.muted).child(detail));
     return v_flex().id("saved-commands").track_focus(this.handle)
       .on_key_down((event, cx) => this.keyDown(event, cx))
-      .size_full().min_h(0).p(14).gap(10).bg(t.popover).text_size(12).text_color(t.foreground)
-      .child(h_flex().items_center().justify_between()
-        .child(div().text_size(15).font_semibold().child("Saved commands"))
-        .child(button("close", "✕", () => closeOverlay(props().overlay))))
+      .w_full().min_h(0).p(16).gap(12).bg(t.popover).text_size(12).text_color(t.foreground)
       .child(h_flex().items_center().gap(8)
-        .child(div().flex_1().min_w(0).text_color(t.dim).child(this.starting ? "Starting command…" : "Run in a new tab in the current Space and folder."))
-        .when(this.editing === null, el => el.child(button("add", "+ Add command", (_e, cx) => this.edit(-1, cx)).flex_none())))
+        .child(svg("mods/workspace-chrome/terminal.svg").size(17).text_color(t.accent))
+        .child(div().flex_1().text_size(15).font_semibold().child(this.editing === null ? "Saved commands" : this.editing === -1 ? "Add command" : "Edit command"))
+        .when(this.editing === null, el => el.child(button("add", "+ Add command", (_e, cx) => this.edit(-1, cx)).text_color(t.accent)))
+        .child(iconButton("close", "x", "Close", () => closeOverlay(props().overlay))))
       .when(this.editing === null, el => el
-        .when(entries.length === 0, x => x.child(div().text_color(t.dim).child("No saved commands yet.")))
-        .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().children(rows)))
-      .when(this.editing === null && entries.length > 0, el => el.child(div().text_color(t.dim).truncate().child(`↑ ↓ Select · Enter Run · ${entries[this.selected]?.name ?? ""}`)))
+        .when(entries.length === 0, x => x.child(div().py(24).text_color(t.muted).child("Save a command to run it again with a keystroke.")))
+        .child(v_flex().h(Math.min(320, entries.length * 79 + (this.deleting === null ? 0 : 40))).min_h(0).overflow_y_scrollbar().gap(7).children(rows))
+        .child(h_flex().items_center().justify_between().pt(10).border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
+          .child(div().child(this.starting ? "Starting command…" : "↑ ↓ Select    ↵ Run    Esc Close"))
+          .child(div().child(entries.length ? `${this.selected + 1} / ${entries.length}` : "No commands"))))
       .when(this.editing !== null, el => el
-        .child(div().font_semibold().child(this.editing === -1 ? "Add command" : "Edit command"))
-        .child(input(this.name)).child(input(this.command))
-        .child(h_flex().items_center().gap(8).child(div().text_color(t.dim).child("Run mode"))
-          .child(button("mode-foreground", this.background ? "Foreground" : "● Foreground", (_e, cx) => { this.background = false; cx.notify(); }))
-          .child(button("mode-background", this.background ? "● Background" : "Background", (_e, cx) => { this.background = true; cx.notify(); })))
-        .child(div().text_color(t.dim).child("Runs with sh -lc on the Space's machine."))
-        .child(h_flex().gap(8)
-          .child(button("cancel-edit", "Cancel", (_e, cx) => { this.error = ""; this.showList(cx); }))
-          .child(button("save", "Save", (_e, cx) => this.save(cx)))))
+        .child(field("Name", input(this.name)))
+        .child(field("Shell command", Textarea.new(this.command).h(78).px(10).py(8).rounded(7).border_1()
+          .border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12)))
+        .child(field("Run mode", h_flex().gap(8)
+          .child(mode(false, "Foreground", "Switch to the new tab"))
+          .child(mode(true, "Background", "Return to the current tab"))))
+        .child(h_flex().items_center().gap(8).pt(10).border_t(1).border_color(t.border)
+          .child(div().flex_1().text_size(11).text_color(t.dim).child("New tab · Current Space and folder"))
+          .child(button("cancel-edit", "Cancel", (_e, cx) => { this.error = ""; this.showList(cx); }).text_color(t.muted))
+          .child(button("save", this.editing === -1 ? "Add command" : "Save changes", (_e, cx) => this.save(cx))
+            .bg(t.solid).text_color(t.solid_foreground).hover(s => s.bg(t.solid)))))
       .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)));
   }
 }

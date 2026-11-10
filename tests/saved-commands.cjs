@@ -5,7 +5,7 @@ let entries = [], focusCount = 0;
 const runs = [], closed = [];
 const cx = { focus_handle: () => ({ focus() { focusCount++; } }), notify() {}, stop_propagation() {}, spawn() {} };
 const input = () => ({ text: '', value() { return this.text; }, set_value(v) { this.text = v; }, focus() {} });
-const context = { View: class {}, InputState: { new: input },
+const context = { View: class {}, InputState: { new: input }, TextareaState: { new: input },
   shared: () => entries, setShared: (_key, value) => { entries = value; }, props: () => ({ space: 'space', cwd: '/work', overlay: 'dialog' }),
   spaces: () => [{ id: 'space' }], run: (...args) => runs.push(args), closeOverlay: id => closed.push(id) };
 vm.runInNewContext(fs.readFileSync('mods/nook-commands/main.js', 'utf8').replace(/^import .*;\n/gm, '').replace('export default class ', 'globalThis.Mod = class '), context);
