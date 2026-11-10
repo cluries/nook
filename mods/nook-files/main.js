@@ -1,7 +1,7 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, v_resizable, resizable_panel, Editor, EditorState, TextView } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, appHome } from "herdr";
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -12,6 +12,14 @@ function location() {
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
+const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+// image() loads application assets. Keep the original bytes and format;
+// sips only reads dimensions, and the layout handles visual scaling.
+async function originalImage(source) {
+  const result = await exec("python3", [`${appHome()}/mods/nook-files/image-cache.py`, source, appHome()]);
+  if (result.code !== 0) throw new Error(result.stderr);
+  return JSON.parse(result.stdout);
+}
 
 async function directory(path, on) {
   const windowsDirectory = async () => {
@@ -44,6 +52,7 @@ export default class Files extends View {
     const savedRatio = Number(localStorage.getItem("split.ratio"));
     this.splitRatio = savedRatio > 0 && savedRatio < 1 ? savedRatio : 0.5;
     this.splitHeight = 0;
+    this.imageSize = { width: 0, height: 0 };
     this.saved = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
@@ -79,7 +88,7 @@ export default class Files extends View {
       if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
       const saved = this.saved.get(next);
       this.context = { key: next, cwd, on }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
-      this.pending = new Set(); this.marks = {}; this.show(null); this.watched = null; this.error = null; this.limited = false;
+      this.pending = new Set(); this.marks = {}; this.show(null, cx); this.watched = null; this.error = null; this.limited = false;
       this.loading = false;
       if (saved?.file) this.show(saved.file, cx);
     }
@@ -132,10 +141,23 @@ export default class Files extends View {
   }
 
   show(path, cx) {
-    this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.previewText = null;
+    this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.previewText = null; this.previewImage = null;
     const request = this.previewRequest = (this.previewRequest ?? 0) + 1;
     if (!path || !cx) return;
     const context = this.context, root = this.root, on = this.on;
+    if (IMAGE.test(path)) {
+      if (on) this.fileError = "Image preview is unavailable for remote files";
+      else if (window()?.platform !== "macos") this.fileError = "Image preview is available on macOS only";
+      else cx.spawn(async cx => {
+        try {
+          const original = await originalImage(`${root}/${path}`);
+          if (this.previewRequest !== request || !this.current(context)) return;
+          this.previewImage = original;
+        } catch { if (this.previewRequest === request && this.current(context)) this.fileError = "Cannot preview this image (unreadable or unsupported)"; }
+        finally { cx.notify(); }
+      });
+      return;
+    }
     cx.spawn(async cx => {
       try {
         const text = await readTextFile(`${root}/${path}`, { on });
@@ -201,7 +223,12 @@ export default class Files extends View {
                 .on_click((_e, cx) => { this.previewMode = mode; localStorage.setItem("markdown.previewMode", mode); cx.notify(); })
                 .child(h_flex().flex_1().items_center().child(mode === "code" ? "Code" : "Preview"))
                 .child(div().h(2).bg(this.previewMode === mode ? t.accent : t.background)))))))
-          .child(this.code ? (markdown && this.previewMode === "preview"
+          .child(this.previewImage ? v_flex().id("files-image-frame").flex_1().min_h(0).p(12).items_center().justify_center()
+            .on_size_change((size, cx) => { if (this.imageSize.width !== size.width || this.imageSize.height !== size.height) { this.imageSize = size; cx.notify(); } })
+            .when(this.imageSize.width > 24 && this.imageSize.height > 24, el => {
+              const scale = Math.min((this.imageSize.width - 24) / this.previewImage.width, (this.imageSize.height - 24) / this.previewImage.height);
+              return el.child(image(this.previewImage.path).w(this.previewImage.width * scale).h(this.previewImage.height * scale).flex_none());
+            }) : this.code ? (markdown && this.previewMode === "preview"
             ? div().id("files-markdown").flex_1().min_h(0).overflow_y_scrollbar().p(12).child(TextView.markdown("files-markdown-content", this.previewText))
             : Editor.new(this.code).flex_1().min_h(0))
             : div().p(12).text_color(t.dim).child(this.file ? (this.fileError || "Loading file…") : "Select a file to preview")))))));
