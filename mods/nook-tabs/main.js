@@ -127,7 +127,7 @@ export default class Tabs extends View {
         .bg(needs > 0 ? t.blocked + "26" : t.chrome)
         .text_color(needs > 0 ? t.blocked : t.dim).text_size(12).font_semibold()
         .tooltip(`${needs} agents need attention`)
-        .child(svg("mods/nook-tabs/person.svg").size(14))
+        .child(svg("mods/nook-tabs/lens.svg").size(16))
         .child(div().h_full().flex().items_center().child(String(needs))))
       .child(button("tab-new", svg("mods/workspace-chrome/plus.svg").size(15), () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })).tooltip("New tab"))
       .child(button("saved-commands", svg("mods/workspace-chrome/terminal.svg").size(15), () => this.openCommands()).tooltip("Saved commands (⌘R)"))
