@@ -66,7 +66,7 @@ export default class Pane extends View {
       .when(Boolean(p.branch), el => el.child(h_flex().flex_none().gap(4).items_center().text_color(t.dim)
         .tooltip(`Branch: ${p.branch}`)
         .child(svg("mods/workspace-chrome/branch.svg").size(12))
-        .child(div().max_w(120).truncate().child(p.branch))))
+        .child(div().flex_none().whitespace_nowrap().child(p.branch))))
       .child(div().flex_1())
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
