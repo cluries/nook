@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, agents, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { spaces, panes, agents, focused, run, openOverlay, nextCommand, theme, window, shared, layout, settings } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -23,9 +23,20 @@ function tabPresentation(tab, pane) {
 }
 
 export default class Tabs extends View {
-  init() {
+  init(_props, cx) {
     this.pressed = null;
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    cx.spawn(async () => {
+      for (;;) {
+        const command = await nextCommand();
+        if (command === "saved-commands") this.openCommands();
+      }
+    });
+  }
+
+  openCommands() {
+    const target = focused();
+    openOverlay({ mod: "nook-commands", kind: "dialog", width: 500, height: 480, props: { space: target?.space, cwd: target?.cwd } });
   }
 
   // The side panel is remembered per space: switching shows that space's choice
@@ -118,6 +129,7 @@ export default class Tabs extends View {
         .tooltip(`${needs} agents need attention`)
         .child(svg("mods/nook-tabs/person.svg").size(14))
         .child(String(needs)))
+      .child(button("saved-commands", svg("mods/workspace-chrome/terminal.svg").size(15), () => this.openCommands()).tooltip("Saved commands (⌘R)"))
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
