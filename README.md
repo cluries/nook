@@ -23,6 +23,8 @@ Herdr updates its built-in mods and layouts. To customize one, first copy it und
 
 ## Automatic tab names
 
+The sidebar footer displays Settings and Add machine as icon-only buttons on one row, including when the sidebar is collapsed. Hover for their labels; the Settings icon retains the update indicator. The right side shows local time as HH:MM:SS, hidden when the sidebar is collapsed. After updating, review the installation dry run, install the files, run `herdr-app check ~/.config/herdr-app/mods/nook-footer`, and check both buttons, the clock, and the collapsed sidebar in the `nook` layout.
+
 The bottom status bar is removed. To the left of the new-tab button, the top tab bar shows the active Space's Git branch when available and a person icon with the total number of blocked agents, including zero, matching the former status bar's scope. Long branch names are truncated. After installation, verify these indicators while switching Spaces and when an agent needs attention, and check tab scrolling and panel buttons at narrow window widths.
 
 The `nook` layout copies the current Herdr `main` layout and uses the custom `nook-tabs` mod. Select `nook` in the layout picker after installation. For an unnamed tab, the bar chooses the first agent pane, otherwise the first non-shell terminal, otherwise the first terminal, in pane order. It displays the agent's terminal title when available, otherwise the program name, then the current directory's last component, and finally the tab number. A manually named tab always keeps its name; clearing it returns to automatic display. The inferred name is not saved or sent to other clients. Pane focus changes do not change which split supplies the name.
