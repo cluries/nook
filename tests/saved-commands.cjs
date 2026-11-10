@@ -27,4 +27,12 @@ key('cmd-enter'); assert.equal(runs.length, 1);
 view.edit(-1, cx); view.name.set_value('New'); view.command.set_value('echo new'); view.save(cx);
 assert.equal(view.selected, 20); assert.equal(focusCount, 2);
 entries = entries.slice(0, 1); key('down'); assert.equal(view.selected, 0);
+view.selectRow(0, { click_count: 1 }, cx); assert.equal(runs.length, 1);
+view.selectRow(0, { click_count: 2 }, cx); assert.equal(runs.length, 2);
+assert.equal(runs[1][1].argv[2], 'echo 0');
+for (const field of ['editing', 'deleting', 'starting']) {
+  const previous = view[field]; view[field] = field === 'starting' ? true : 0;
+  view.selectRow(0, { click_count: 2 }, cx); assert.equal(runs.length, 2);
+  view[field] = previous;
+}
 console.log('Saved command keyboard checks passed.');

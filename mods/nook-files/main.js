@@ -4,6 +4,8 @@ import { v_flex, h_flex, v_resizable, resizable_panel, Editor, EditorState, Text
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, openOverlay, appHome } from "herdr";
 import ICONS from "./icons.js";
 import { indexFiles, findMatches } from "./search.js";
+import { searchPreview } from "./preview-search.js";
+import { ignoredPaths } from "./ignored.js";
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -76,7 +78,14 @@ export default class Files extends View {
     this.query = ""; this.searchSeq = 0; this.searchResults = []; this.searching = false;
     this.input = InputState.new({ placeholder: "Search files (*, ?, **)…" });
     this.input.on("change", (_e, cx) => this.search(this.input.value(), cx));
-    this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
+    this.previewSearch = InputState.new({ placeholder: "Search preview…" });
+    this.previewQuery = ""; this.previewResults = { results: [], total: 0 };
+    this.previewSearch.on("change", (_e, cx) => {
+      this.previewQuery = this.previewSearch.value();
+      this.previewResults = searchPreview(this.previewText ?? "", this.previewQuery);
+      cx.notify();
+    });
+    this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {}; this.ignored = new Set();
     this.refresh(cx);
     cx.timer.every(10000, cx => this.refresh(cx));
   }
@@ -100,7 +109,12 @@ export default class Files extends View {
     const entries = await directory(path ? `${root}/${path}` : root, on);
     if (!this.current(context) || (path && !this.folders.has(path))) return;
     const used = [...this.entries.entries()].filter(([p]) => p !== path).reduce((n, [, e]) => n + e.length, 0);
-    this.entries.set(path, entries.slice(0, Math.max(0, Math.min(PER_FOLDER, TOTAL - used))).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)));
+    const visible = entries.slice(0, Math.max(0, Math.min(PER_FOLDER, TOTAL - used))).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
+    this.entries.set(path, visible);
+    const paths = visible.map(entry => path ? `${path}/${entry.name}` : entry.name);
+    const ignored = await ignoredPaths(paths, batch => exec("sh", ["-c", 'printf "%s\\0" "$@" | git --no-optional-locks check-ignore --stdin -z', "nook-ignore", ...batch], { cwd: root, on }).catch(() => null));
+    if (!this.current(context) || (path && !this.folders.has(path))) return;
+    if (ignored) for (const item of paths) { this.ignored.delete(item); if (ignored.has(item)) this.ignored.add(item); }
     if (entries.length > PER_FOLDER || used + entries.length > TOTAL) this.limited = true;
   }
 
@@ -110,7 +124,7 @@ export default class Files extends View {
       if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
       const saved = this.saved.get(next);
       this.context = { key: next, cwd, on }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
-      this.pending = new Set(); this.marks = {}; this.show(null, cx); this.watched = null; this.error = null; this.limited = false;
+      this.pending = new Set(); this.marks = {}; this.ignored = new Set(); this.show(null, cx); this.watched = null; this.error = null; this.limited = false;
       this.searchIndex = null; this.branch = null; this.gitError = false; this.searchSeq++; this.searchResults = []; this.searching = false;
       if (this.query) { this.query = ""; this.input.set_value(""); }
       this.loading = false;
@@ -195,6 +209,7 @@ export default class Files extends View {
 
   show(path, cx) {
     this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.previewText = null; this.previewImage = null;
+    this.previewQuery = ""; this.previewResults = { results: [], total: 0 }; this.previewSearch.set_value("");
     const request = this.previewRequest = (this.previewRequest ?? 0) + 1;
     if (!path || !cx) return;
     const context = this.context, root = this.root, on = this.on;
@@ -230,8 +245,13 @@ export default class Files extends View {
 
   row(entry, path, depth, t, search = false) {
       const open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
-      const label = search ? path : entry.name;
-      return h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
+      const label = search ? path : entry.name, ignored = this.ignored.has(path) && !mark;
+      const dark = settings().dark;
+      const markColor = mark === "?" ? (dark ? t.ansi12 : t.ansi4)
+        : mark === "A" ? (dark ? t.ansi10 : t.ansi2)
+        : mark === "D" || mark === "U" ? (dark ? t.ansi9 : t.ansi1) : (dark ? t.ansi11 : t.ansi3);
+      const markLabel = { "?": "Untracked", A: "Added", M: "Modified", D: "Deleted", U: "Conflict" }[mark];
+      return h_flex().id(`file-${path}`).h(26).flex_none().pl(6 + depth * 16).pr(6).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
         .when(path === this.file && !entry.dir, el => el.bg(t.selected))
         .on_click((_e, cx) => {
           if (entry.dir && search) {
@@ -247,9 +267,13 @@ export default class Files extends View {
           openOverlay({ mod: "nook-files-menu", kind: "popup", width: 220, height: 112, props: { root: this.root, path, machine: this.on } });
         })
         .child(entry.dir ? svg(`mods/nook-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
-        .child(image(fileIcon(path, entry.dir, open, settings().dark)).size(16).flex_none())
-        .child(div().flex_1().min_w(0).truncate().child(label))
-        .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" || mark === "?" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark)));
+        .child(image(fileIcon(path, entry.dir, open, dark)).size(16).flex_none())
+        .child(div().min_w(0).truncate().when(ignored, el => el.text_color(t.dim).tooltip("Ignored by Git"))
+          .when(Boolean(mark), el => el.text_color(markColor)).child(label))
+        .when(Boolean(mark), el => el.child(div().size(7).flex_none().rounded(7)
+          .when(mark === "?", dot => dot.border_1().border_color(markColor))
+          .when(mark !== "?", dot => dot.bg(markColor))
+          .tooltip(entry.dir ? `Contains changes: ${markLabel}` : markLabel)));
   }
 
   rows(prefix, depth, out, t) {
@@ -275,23 +299,27 @@ export default class Files extends View {
           if (total > 0) { this.splitRatio = sizes[0] / total; localStorage.setItem("split.ratio", String(this.splitRatio)); }
         })
         .child(resizable_panel().size(Math.max(100, this.splitHeight * this.splitRatio)).size_range(100).child(v_flex().size_full().min_h(0)
-          .child(h_flex().flex_none().mx(6).mt(5).items_center()
-            .child(h_flex().h(24).w("45%").flex_none().px(6).gap(4).items_center().rounded(5).border_1().border_color(t.input).bg(t.background)
-              .child(Input.new(this.input).h_full().flex_1().min_w(0).text_size(11).text_color(t.foreground))
-              .when(Boolean(this.query), el => el.child(div().id("files-search-clear").flex_none().text_size(14).text_color(t.dim).cursor_pointer()
-                .tooltip("Clear search").hover(s => s.text_color(t.foreground))
+          .child(h_flex().h(34).flex_none().px(10).gap(12).items_center()
+            .child(h_flex().w(140).h(24).flex_none().px(6).gap(4).items_center().rounded(5).border_1().border_color(t.input)
+              .child(Input.new(this.input).flex_1().min_w(0).text_size(11).text_color(t.foreground))
+              .when(Boolean(this.query), el => el.child(div().id("files-search-clear").flex_none().text_size(15).text_color(t.muted).cursor_pointer()
+                .tooltip("Clear search")
                 .on_click((_e, cx) => { this.input.set_value(""); this.search("", cx); }).child("×"))))
-            .child(div().w("10%").flex_none())
-            .when(Boolean(this.branch), el => el.child(div().w("45%").min_w(0).pr(4).truncate().text_right().text_size(11).text_color(t.muted)
+            .when(Boolean(this.branch), el => el.child(h_flex().flex_1().min_w(0).pr(4).gap(4).items_center().text_color(t.muted)
               .tooltip(`${this.branch}${this.gitError ? " · status unavailable" : ""}`)
-              .child(`⑂ ${this.branch}${this.gitError ? " · status unavailable" : ""}`))))
-          .child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.query.trim() ? this.searchResults.map(entry => this.row(entry, entry.path, 0, t, true)) : this.rows("", 0, [], t))
+              .child(svg("mods/workspace-chrome/branch.svg").size(14).flex_none())
+              .child(div().min_w(0).truncate().text_size(11).child(`${this.branch}${this.gitError ? " · status unavailable" : ""}`)))))
+          .child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(4).children(this.query.trim() ? this.searchResults.map(entry => this.row(entry, entry.path, 0, t, true)) : this.rows("", 0, [], t))
           .when(Boolean(this.error) || (this.query.trim() ? !this.searchResults.length : !this.entries.get("")?.length), el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.query.trim() ? (this.searching ? "Searching…" : "No matches") : this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
           .when(Boolean(this.query.trim()) && (this.searching || this.searchLimited || this.searchError), el => el.child(div().p(8).text_size(11).text_color(t.dim).child(this.searching ? "Searching…" : this.searchError || "Search limited; refine your query")))
           .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
           )
         .child(resizable_panel().size_range(100).child(v_flex().size_full().min_h(0).overflow_hidden()
-          .child(h_flex().h(34).flex_none().px(12).items_center().border_b(1).border_color(t.border)
+          .child(h_flex().h(34).flex_none().px(10).gap(12).items_center().border_b(1).border_color(t.border)
+            .when(Boolean(this.code), el => el.child(h_flex().w(140).h(24).flex_none().px(6).gap(4).items_center().rounded(5).border_1().border_color(t.input)
+              .child(Input.new(this.previewSearch).flex_1().min_w(0).text_size(11).text_color(t.foreground))
+              .when(Boolean(this.previewQuery), box => box.child(div().id("preview-search-clear").flex_none().cursor_pointer().text_size(15).text_color(t.muted).tooltip("Clear preview search")
+                .on_click((_e, cx) => { this.previewSearch.set_value(""); this.previewQuery = ""; this.previewResults = { results: [], total: 0 }; cx.notify(); }).child("×")))))
             .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.file ?? "Preview"))
             .when(markdown, el => el.child(h_flex().h_full().flex_none().gap(14)
               .children(["code", "preview"].map(mode => v_flex().id(`files-mode-${mode}`).h_full().cursor_pointer().justify_end()
@@ -300,7 +328,14 @@ export default class Files extends View {
                 .on_click((_e, cx) => { this.previewMode = mode; localStorage.setItem("markdown.previewMode", mode); cx.notify(); })
                 .child(h_flex().flex_1().items_center().child(mode === "code" ? "Code" : "Preview"))
                 .child(div().h(2).bg(this.previewMode === mode ? t.accent : t.background)))))))
-          .child(this.previewImage ? v_flex().id("files-image-frame").flex_1().min_h(0).p(12).items_center().justify_center()
+          .child(this.code && this.previewQuery ? v_flex().id("preview-search-results").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(4)
+            .child(div().text_size(11).text_color(t.muted).child(`${this.previewResults.total} matching lines${this.previewResults.total > 200 ? " · first 200 shown" : ""}`))
+            .when(!this.previewResults.total, el => el.child(div().p(4).text_size(12).text_color(t.muted).child("No matching lines")))
+            .children(this.previewResults.results.map(result => h_flex().gap(8).items_center().text_size(12)
+              .child(div().w(44).flex_none().text_right().text_color(t.dim).child(String(result.line)))
+              .child(h_flex().min_w(0).overflow_hidden().text_color(t.foreground)
+                .child(div().child(result.before)).child(div().bg(t.selection).font_semibold().child(result.match)).child(div().child(result.after)))))
+            : this.previewImage ? v_flex().id("files-image-frame").flex_1().min_h(0).p(12).items_center().justify_center()
             .on_size_change((size, cx) => { if (this.imageSize.width !== size.width || this.imageSize.height !== size.height) { this.imageSize = size; cx.notify(); } })
             .when(this.imageSize.width > 24 && this.imageSize.height > 24, el => {
               const scale = Math.min((this.imageSize.width - 24) / this.previewImage.width, (this.imageSize.height - 24) / this.previewImage.height);

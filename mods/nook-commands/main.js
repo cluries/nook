@@ -36,8 +36,19 @@ export default class SavedCommands extends View {
     cx.notify();
   }
 
+  selectRow(index, event, cx) {
+    if (this.editing !== null || this.deleting !== null || this.starting) return;
+    const entry = this.entries()[index];
+    if (!entry) return;
+    this.selected = index;
+    this.handle.focus();
+    if (event.click_count === 2) this.execute(entry, cx);
+    cx.notify();
+  }
+
   showList(cx) {
     this.editing = null;
+    this.deleting = null;
     this.selected = Math.max(0, Math.min(this.selected, this.entries().length - 1));
     this.handle.focus();
     cx.notify();
@@ -116,21 +127,13 @@ export default class SavedCommands extends View {
       v_flex().flex_none().px(8).py(4).rounded(6).border_1()
         .border_color(index === this.selected ? t.accent : t.border)
         .bg(index === this.selected ? t.raised : t.popover)
-        .id(`command-${index}`).on_click((_e, cx) => { this.selected = index; this.handle.focus(); cx.notify(); })
+        .id(`command-${index}`).on_click((event, cx) => this.selectRow(index, event, cx))
         .child(h_flex().items_center().gap(8)
           .child(div().w(110).flex_none().truncate().font_semibold().tooltip(entry.name).child(entry.name))
           .child(div().flex_1().min_w(0).text_size(12).text_color(t.muted).truncate().tooltip(`${entry.command}\n${entry.background ? "Background" : "Foreground"}`).child(entry.command))
           .child(button(`run-${index}`, "▶", (_e, cx) => this.execute(entry, cx))
             .px(7).text_color(t.accent).tooltip(`Run ${entry.background ? "in background" : "in foreground"}`))
-          .child(iconButton(`edit-${index}`, "square-pen", "Edit command", (_e, cx) => this.edit(index, cx)))
-          .child(button(`delete-${index}`, "×", (_e, cx) => { this.selected = index; this.deleting = index; this.handle.focus(); cx.notify(); })
-            .px(7).text_size(16).text_color(t.dim).tooltip("Delete command")))
-        .when(this.deleting === index, x => x.child(h_flex().items_center().gap(6).pt(6).border_t(1).border_color(t.border)
-          .child(div().flex_1().text_color(t.blocked).child("Delete this command?"))
-          .child(button(`cancel-delete-${index}`, "Cancel", (_e, cx) => { this.deleting = null; this.handle.focus(); cx.notify(); }))
-          .child(button(`confirm-delete-${index}`, "Delete", (_e, cx) => {
-            const next = this.entries().slice(); next.splice(index, 1); setShared(KEY, next); this.deleting = null; this.showList(cx);
-          }).text_color(t.blocked)))));
+          .child(iconButton(`edit-${index}`, "square-pen", "Edit command", (_e, cx) => this.edit(index, cx)))));
     const field = (label, control) => v_flex().gap(6).child(div().text_size(11).text_color(t.muted).child(label)).child(control);
     const mode = (background, title, detail) => v_flex().flex_1().min_w(0).p(9).gap(4).rounded(7).border_1()
       .border_color(this.background === background ? t.accent : t.border)
@@ -149,7 +152,7 @@ export default class SavedCommands extends View {
         .child(iconButton("close", "x", "Close", () => closeOverlay(props().overlay))))
       .when(this.editing === null, el => el
         .when(entries.length === 0, x => x.child(div().py(24).text_color(t.muted).child("Save a command to run it again with a keystroke.")))
-        .child(v_flex().h(Math.min(320, entries.length * 42 + (this.deleting === null ? 0 : 40))).min_h(0).overflow_y_scrollbar().gap(2).children(rows))
+        .child(v_flex().h(Math.min(320, entries.length * 42)).min_h(0).overflow_y_scrollbar().gap(2).children(rows))
         .child(h_flex().items_center().justify_between().pt(10).border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
           .child(div().child(this.starting ? "Starting command…" : "↑ ↓ Select    ↵ Run    Esc Close"))
           .child(div().child(entries.length ? `${this.selected + 1} / ${entries.length}` : "No commands"))))
@@ -160,11 +163,19 @@ export default class SavedCommands extends View {
         .child(field("Run mode", h_flex().gap(8)
           .child(mode(false, "Foreground", "Switch to the new tab"))
           .child(mode(true, "Background", "Return to the current tab"))))
+        .when(this.deleting !== null, x => x.child(h_flex().items_center().gap(6)
+          .child(div().flex_1().text_color(t.blocked).child("Delete this command?"))
+          .child(button("cancel-delete", "Cancel", (_e, cx) => { this.deleting = null; cx.notify(); }))
+          .child(button("confirm-delete", "Delete", (_e, cx) => {
+            const next = this.entries().slice(); next.splice(this.deleting, 1); setShared(KEY, next); this.deleting = null; this.showList(cx);
+          }).text_color(t.blocked))))
         .child(h_flex().items_center().gap(8).pt(10).border_t(1).border_color(t.border)
-          .child(div().flex_1().text_size(11).text_color(t.dim).child("New tab · Current Space and folder"))
-          .child(button("cancel-edit", "Cancel", (_e, cx) => { this.error = ""; this.showList(cx); }).text_color(t.muted))
-          .child(button("save", this.editing === -1 ? "Add command" : "Save changes", (_e, cx) => this.save(cx))
-            .bg(t.solid).text_color(t.solid_foreground).hover(s => s.bg(t.solid)))))
+          .when(this.editing >= 0 && this.deleting === null, x => x.child(button("delete", "Delete", (_e, cx) => { this.deleting = this.editing; cx.notify(); }).text_color(t.blocked)))
+          .child(div().flex_1())
+          .when(this.deleting === null, x => x
+            .child(button("cancel-edit", "Cancel", (_e, cx) => { this.error = ""; this.showList(cx); }).text_color(t.muted))
+            .child(button("save", this.editing === -1 ? "Add command" : "Save changes", (_e, cx) => this.save(cx))
+              .bg(t.solid).text_color(t.solid_foreground).hover(s => s.bg(t.solid))))))
       .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)));
   }
 }
