@@ -264,7 +264,7 @@ export default class Files extends View {
         })
         .on_mouse_down("right", (_e, cx) => {
           cx.stop_propagation();
-          openOverlay({ mod: "nook-files-menu", kind: "popup", width: 220, height: 112, props: { root: this.root, path, machine: this.on } });
+          openOverlay({ mod: "nook-files-menu", kind: "popup", width: 220, height: 143, props: { root: this.root, path, machine: this.on, terminal: focused()?.terminal ?? null } });
         })
         .child(entry.dir ? svg(`mods/nook-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(image(fileIcon(path, entry.dir, open, dark)).size(16).flex_none())

@@ -38,7 +38,7 @@ export default class NookFooter extends View {
       .child(button("machine", "plus", "Add machine", () => run("mod.open", { name: "machine-add" })))
       .when(width >= 160, el => el.child(div().flex_1()).child(
         h_flex().flex_none().text_size(12).text_color(t.dim).children(
-          [...time].map(char => div().w(8).flex_none().flex().justify_center().child(char))
+          [...time].map(char => div().w(char === ":" ? 4 : 8).flex_none().flex().justify_center().child(char))
         )
       ));
   }

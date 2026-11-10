@@ -1,8 +1,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { closeOverlay, exec, hc, props, theme, notify } from "herdr";
+import { closeOverlay, exec, hc, props, theme, notify, run, focused } from "herdr";
 
-const ITEMS = ["Open With Zed", "Open With VSCode", "Copy Relative Path"];
+const ITEMS = ["Open With Zed", "Open With VSCode", "Copy Relative Path", "Insert Relative Path"];
 
 function remoteUri(editor, target, path) {
   if (!/^(?:[\w.-]+@)?[\w.-]+(?::\d+)?$/.test(target) || !path.startsWith("/"))
@@ -22,10 +22,22 @@ export default class FilesMenu extends View {
 
   choose(index, cx) {
     if (this.busy) return;
-    const { root, path, machine, overlay } = props();
+    const { root, path, machine, overlay, terminal } = props();
     if (index === 2) {
       cx.write_to_clipboard(path);
       closeOverlay(overlay);
+      return;
+    }
+    if (index === 3) {
+      if (!terminal || focused()?.terminal !== terminal) {
+        notify({ title: "Could not insert path", body: "Focus the target terminal and open the menu again.", level: "error" });
+        closeOverlay(overlay);
+        return;
+      }
+      cx.write_to_clipboard(` ${path} `);
+      closeOverlay(overlay);
+      run("pane.focus", { terminal });
+      run("terminal.paste");
       return;
     }
     const editor = index === 0 ? "Zed" : "Visual Studio Code";
@@ -71,7 +83,7 @@ export default class FilesMenu extends View {
           const next = hovered ? index : (this.at === index ? -1 : this.at);
           if (next !== this.at) { this.at = next; cx.notify(); }
         }).on_click((_e, cx) => this.choose(index, cx))
-        .child(index === 2 ? svg("mods/workspace-chrome/files.svg").size(14).flex_none().text_color(t.muted)
+        .child(index >= 2 ? svg(index === 2 ? "mods/workspace-chrome/files.svg" : "mods/nook-files-menu/insert-path.svg").size(14).flex_none().text_color(t.muted)
           : image(`mods/nook-files-menu/${index === 0 ? "zed" : "vscode"}.png`).size(16).flex_none())
         .child(div().flex_1().child(label))));
   }
