@@ -120,7 +120,7 @@
                   },
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "nook-pane"
                     },
                     "height": 30,
                     "position": "top",
