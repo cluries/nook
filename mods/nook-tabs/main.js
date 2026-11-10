@@ -13,9 +13,7 @@ function find(node, id) {
 
 // Pick a stable pane in model order so switching focus between splits does not
 // rename the tab. Names here are display-only and never overwrite tab.rename.
-function tabPresentation(tab, allPanes) {
-  const terminals = allPanes.filter(p => p.tab === tab.id && p.terminal);
-  const pane = terminals.find(p => p.program?.agent) ?? terminals.find(p => !p.program?.shell) ?? terminals[0];
+function tabPresentation(tab, pane) {
   const program = pane?.program;
   if (tab.named) return { name: tab.name, program };
   const title = pane?.title?.trim();
@@ -65,9 +63,16 @@ export default class Tabs extends View {
     const stop = (_e, cx) => cx.stop_propagation();
     const button = (id, label, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
-    const allPanes = panes();
+    // One pass, keeping the first pane at each priority in model order.
+    const preferred = new Map();
+    const priority = p => p.program?.agent ? 2 : !p.program?.shell ? 1 : 0;
+    for (const pane of panes()) {
+      if (!pane.terminal) continue;
+      const previous = preferred.get(pane.tab);
+      if (!previous || priority(pane) > priority(previous)) preferred.set(pane.tab, pane);
+    }
     const item = (c, i) => {
-      const { name, program } = tabPresentation(c, allPanes);
+      const { name, program } = tabPresentation(c, preferred.get(c.id));
       return h_flex().id(`tab-${c.id}`).h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover))

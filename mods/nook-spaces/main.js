@@ -316,8 +316,7 @@ export default class Spaces extends View {
   }
 
   // Spaces in order, each worktree space moved under its main checkout's.
-  ordered() {
-    const sp = spaces(), ps = panes();
+  ordered(sp, ps, liveMachines) {
     const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
     const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null }));
@@ -337,7 +336,7 @@ export default class Spaces extends View {
     // write can lose a sync conflict: allow the echo to settle before retrying.
     const order = sp.map(w => w.id);
     const target = out.map(r => r.w.id);
-    const key = JSON.stringify([order, target, machines()]);
+    const key = JSON.stringify([order, target, liveMachines]);
     if (order.every((id, i) => id === target[i])) {
       this.ordering = null;
     } else if (this.ordering?.key !== key || this.orderingDue(Date.now())) {
@@ -357,14 +356,27 @@ export default class Spaces extends View {
 
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
-    const rows = this.ordered();
-    const pins = shared("nook.spaces.pinned") ?? {};
-    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
+    // Native getters copy their full collections. Share one render snapshot
+    // across rows; event handlers still read live data when invoked.
+    const sp = spaces(), ps = panes(), liveMachines = machines();
+    const machineLayouts = new Map(liveMachines.map(m => [m.name, m.layout]));
+    const agentCounts = new Map();
+    for (const agent of agents()) agentCounts.set(agent.space, (agentCounts.get(agent.space) ?? 0) + 1);
+    const snapshot = {
+      ps, machineLayouts, agentCounts,
+      fromIndex: this.pressed === null ? -1 : sp.findIndex(s => s.id === this.pressed),
+      pins: shared("nook.spaces.pinned") ?? {},
+      icons: shared("nook.spaces.icons") ?? {},
+      colors: shared("space.colors") ?? {},
+    };
+    const rows = this.ordered(sp, ps, liveMachines);
+    const pins = snapshot.pins;
+    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t, snapshot));
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const loading = m => {
-      const layout = machines().find(k => k.name === m)?.layout;
+      const layout = machineLayouts.get(m);
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
-        || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
+        || sp.some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
     const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
     if (!remote.length && collapsed) return loading(null) && !rows.length ? [loadingRow(null)] : [...rows.filter(r => pins[r.w.id]), ...rows.filter(r => !pins[r.w.id])].map(draw);
@@ -413,7 +425,7 @@ export default class Spaces extends View {
             .child(svg("mods/workspace-chrome/plus.svg").size(10))))
         .when(!collapsed, el => el.child(svg("mods/workspace-chrome/plus.svg").size(12)).child("New space there"));
       const cell = collapsed ? railCell : (el) => el;
-      const available = connected && (!m || machines().find(k => k.name === m)?.layout === "ready");
+      const available = connected && (!m || machineLayouts.get(m) === "ready");
       const metric = available ? this.metrics[m ?? ""] : null;
       const status = metric === undefined ? "Loading metrics…" : "Metrics unavailable";
       const tile = (label, value, color) => h_flex().when(label === "CPU", el => el.w(76).flex_none()).when(label !== "CPU", el => el.flex_1()).min_w(0).h(27).px(8).gap(5).items_center().rounded(5).bg(t.chrome)
@@ -454,19 +466,19 @@ export default class Spaces extends View {
       .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
   }
 
-  row({ w, i, g, tree }, t) {
+  row({ w, i, g, tree }, t, snapshot) {
     const on = w.active;
-    const pinned = Boolean((shared("nook.spaces.pinned") ?? {})[w.id]);
-    const chosenIcon = (shared("nook.spaces.icons") ?? {})[w.id];
+    const pinned = Boolean(snapshot.pins[w.id]);
+    const chosenIcon = snapshot.icons[w.id];
     const customIcon = SPACE_ICONS.includes(chosenIcon) || (typeof chosenIcon === "string" && /^(?:mods\/workspace-chrome|icons)\/[a-zA-Z0-9_-]+\.svg$/.test(chosenIcon));
-    const fromIndex = this.pressed === null ? -1 : spaces().findIndex(s => s.id === this.pressed);
-    const colors = shared("space.colors") ?? {};
+    const fromIndex = snapshot.fromIndex;
+    const colors = snapshot.colors;
     const color = colors[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
-    const ps = panes();
+    const ps = snapshot.ps;
     const folder = place(w, ps);
     const key = where(w, ps);
-    const uncertain = this.unsure.has(key) || !(key in this.git) || (w.machine && machines().find(m => m.name === w.machine)?.layout !== "ready");
+    const uncertain = this.unsure.has(key) || !(key in this.git) || (w.machine && snapshot.machineLayouts.get(w.machine) !== "ready");
     const details = [];
     if (uncertain) details.push("Git unknown");
     else if (g) {
@@ -476,7 +488,7 @@ export default class Spaces extends View {
       if (g.behind) details.push(`↓${g.behind}`);
     } else if (folder) details.push(folder);
     if (w.tabs.length > 1) details.push(`${w.tabs.length} tabs`);
-    const count = agents().filter(a => a.space === w.id).length;
+    const count = snapshot.agentCounts.get(w.id) ?? 0;
     const status = { blocked: "Needs attention", working: "Working", done: "Done", idle: "Idle" }[w.status];
     return v_flex()
       .relative()
@@ -568,10 +580,12 @@ export default class Spaces extends View {
     const ids = new Set(sp.map(p => p.id));
     const kept = Object.fromEntries(Object.entries(shared("space.colors") ?? {}).filter(([id]) => ids.has(id)));
     let changed = Object.keys(kept).length !== Object.keys(shared("space.colors") ?? {}).length;
+    const uses = new Map(palette.map(c => [c, 0]));
+    for (const color of Object.values(kept)) uses.set(color, (uses.get(color) ?? 0) + 1);
     for (const p of sp) {
       if (kept[p.id] || p.name === "~") continue;
-      const uses = c => Object.values(kept).filter(v => v === c).length;
-      kept[p.id] = palette.reduce((best, c) => uses(c) < uses(best) ? c : best);
+      kept[p.id] = palette.reduce((best, c) => uses.get(c) < uses.get(best) ? c : best);
+      uses.set(kept[p.id], uses.get(kept[p.id]) + 1);
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
