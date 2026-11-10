@@ -19,16 +19,27 @@ function find(node, id) {
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
-// Where a space is now: its first terminal's live folder, else where it was made.
-// `ps`: panes(), read once by the caller (each read copies every pane).
-function place(s, ps) {
-  const tabs = new Set((s.tabs ?? []).map((c) => c.id));
-  return ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
+// Index folders in pane order, preserving the first available cwd across all
+// tabs in a space (not tab order). Rebuild for each render or Git polling pass.
+function locations(sp, ps) {
+  const spaceOf = new Map();
+  const folders = new Map(sp.map(s => [s.id, s.folder]));
+  for (const s of sp) for (const tab of s.tabs ?? []) spaceOf.set(tab.id, s.id);
+  const found = new Set();
+  for (const pane of ps) {
+    const id = spaceOf.get(pane.tab);
+    if (id === undefined || !pane.cwd || found.has(id)) continue;
+    folders.set(id, pane.cwd);
+    found.add(id);
+  }
+  return new Map(sp.map(s => [s.id, {
+    folder: folders.get(s.id),
+    key: JSON.stringify([s.machine ?? null, folders.get(s.id)]),
+  }]));
 }
 const rowHeight = () => 48;
 const RAIL_CELL = 32;
 const railCell = (el) => h_flex().flex_none().justify_center().child(el);
-const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
 const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // Changes made outside Herdr (an editor's save, a commit in another app): looked
 // for this often, in repos the list shows, while the window is in front.
@@ -74,13 +85,13 @@ export function tone(t, status) {
 
 export default class Spaces extends View {
   init(_props, cx) {
-    this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
-    this.checked = {}; // where() -> when it was last looked at
-    this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
-    this.pending = new Set(); // where()s to look at next
+    this.git = {}; // location key -> { name, branch, ahead, behind, repo, linked }, null: not a repo
+    this.checked = {}; // location key -> when it was last looked at
+    this.unsure = new Set(); // locations git couldn't answer for (a machine away)
+    this.pending = new Set(); // locations to look at next
     this.busy = {}; // pane -> an agent working or a program in front of its shell
     this.ready = {}; // machine -> its layout was readable at the last look
-    this.at = {}; // space -> its where() at the last look
+    this.at = {}; // space -> its location key at the last look
     this.watching = new Set(); // local repos' git folders
     // Spaces made while this runs wait (at most a moment) for their git, so a
     // worktree appears under its repo instead of jumping there.
@@ -137,7 +148,8 @@ export default class Spaces extends View {
   due(now, sp, ps) {
     // Moved there: what it knew of that place may be old.
     const at = {};
-    for (const s of sp) at[s.id] = where(s, ps);
+    const places = locations(sp, ps);
+    for (const s of sp) at[s.id] = places.get(s.id).key;
     const keys = new Set(Object.values(at).filter((k) => JSON.parse(k)[1]));
     const due = new Set([...keys].filter((k) => !(k in this.git)));
     for (const [id, k] of Object.entries(at)) if (this.at[id] && this.at[id] !== k && keys.has(k)) due.add(k);
@@ -316,12 +328,17 @@ export default class Spaces extends View {
   }
 
   // Spaces in order, each worktree space moved under its main checkout's.
-  ordered(sp, ps, liveMachines) {
-    const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
+  ordered(sp, places, liveMachines) {
+    const ready = (w) => this.shown.has(w.id) || places.get(w.id).key in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
-    const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null }));
+    const list = sp.map((w, i) => ({ w, i, g: this.git[places.get(w.id).key] ?? null }));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
+    const children = new Map();
+    for (const r of list) if (nested(r)) {
+      if (!children.has(r.g.repo)) children.set(r.g.repo, []);
+      children.get(r.g.repo).push(r);
+    }
     const out = [];
     const placed = new Set(); // repos whose worktrees are listed (under the first of its spaces)
     for (const r of list) {
@@ -329,7 +346,7 @@ export default class Spaces extends View {
       out.push({ ...r, tree: null });
       if (!r.g || r.g.linked || placed.has(r.g.repo)) continue;
       placed.add(r.g.repo);
-      const kids = list.filter((k) => nested(k) && k.g.repo === r.g.repo);
+      const kids = children.get(r.g.repo) ?? [];
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
     }
     // Simulate the batch so later indexes include earlier moves. An attempted
@@ -355,23 +372,29 @@ export default class Spaces extends View {
   }
 
   // The rows, under a header per machine once one isn't this computer.
-  grouped(t, collapsed) {
+  grouped(t, collapsed, sp) {
     // Native getters copy their full collections. Share one render snapshot
     // across rows; event handlers still read live data when invoked.
-    const sp = spaces(), ps = panes(), liveMachines = machines();
+    const places = locations(sp, panes()), liveMachines = machines();
     const machineLayouts = new Map(liveMachines.map(m => [m.name, m.layout]));
     const agentCounts = new Map();
     for (const agent of agents()) agentCounts.set(agent.space, (agentCounts.get(agent.space) ?? 0) + 1);
     const snapshot = {
-      ps, machineLayouts, agentCounts,
+      places, machineLayouts, agentCounts,
       fromIndex: this.pressed === null ? -1 : sp.findIndex(s => s.id === this.pressed),
       pins: shared("nook.spaces.pinned") ?? {},
       icons: shared("nook.spaces.icons") ?? {},
       colors: shared("space.colors") ?? {},
     };
-    const rows = this.ordered(sp, ps, liveMachines);
+    const rows = this.ordered(sp, places, liveMachines);
     const pins = snapshot.pins;
     const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t, snapshot));
+    const groups = new Map();
+    for (const r of rows) {
+      const m = r.w.machine ?? null;
+      if (!groups.has(m)) groups.set(m, []);
+      groups.get(m).push(r);
+    }
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const loading = m => {
       const layout = machineLayouts.get(m);
@@ -382,10 +405,12 @@ export default class Spaces extends View {
     if (!remote.length && collapsed) return loading(null) && !rows.length ? [loadingRow(null)] : [...rows.filter(r => pins[r.w.id]), ...rows.filter(r => !pins[r.w.id])].map(draw);
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
-      const group = rows.filter((r) => (r.w.machine ?? null) === m);
+      const group = groups.get(m) ?? [];
       // Pinning is a view-only partition: the underlying manual order stays intact.
+      const parents = [new Set(), new Set()];
+      for (const r of group) if (!r.tree) parents[Number(Boolean(pins[r.w.id]))].add(r.g?.repo);
       const mine = [...group.filter(r => pins[r.w.id]), ...group.filter(r => !pins[r.w.id])]
-        .map(r => r.tree && !group.some(p => !p.tree && p.g?.repo === r.g?.repo && Boolean(pins[p.w.id]) === Boolean(pins[r.w.id])) ? { ...r, tree: null } : r);
+        .map(r => r.tree && !parents[Number(Boolean(pins[r.w.id]))].has(r.g?.repo) ? { ...r, tree: null } : r);
       const repair = this.reconnecting[m];
       const machine = this.machines.find(k => k.name === m) ?? repair?.machine;
       const connected = !m || machine?.state === "connected";
@@ -475,9 +500,7 @@ export default class Spaces extends View {
     const colors = snapshot.colors;
     const color = colors[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
-    const ps = snapshot.ps;
-    const folder = place(w, ps);
-    const key = where(w, ps);
+    const { folder, key } = snapshot.places.get(w.id);
     const uncertain = this.unsure.has(key) || !(key in this.git) || (w.machine && snapshot.machineLayouts.get(w.machine) !== "ready");
     const details = [];
     if (uncertain) details.push("Git unknown");
@@ -597,6 +620,6 @@ export default class Spaces extends View {
           .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14))))
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
-        .children(this.grouped(t, collapsed)));
+        .children(this.grouped(t, collapsed, sp)));
   }
 }

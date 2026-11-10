@@ -47,9 +47,18 @@ After changes, review the installation dry run and destination differences, inst
 
 ## Render performance
 
-`nook-spaces` shares one snapshot of panes, agents, and machine layouts across rows on each render, counting agents by Space once. The snapshot is rebuilt on the next render, so live title, status, folder, and connection changes remain visible. Color assignment maintains running usage counts instead of rescanning every assigned color for each candidate. `nook-tabs` selects each tab's preferred terminal in one pass over panes, preserving the first agent, then first non-shell terminal, then first terminal in model order. Manual names keep priority.
+`nook-spaces` shares one snapshot of Spaces, panes, agents, and machine layouts across rows on each render, counting agents by Space once. Each render and 250 ms Git polling pass indexes tab ownership and the first available pane folder in one pass, preserving pane order across multiple tabs and the Space folder fallback. Folder lookup costs O(Spaces + tabs + panes) per pass instead of repeatedly scanning all panes for every Space. Worktree children are indexed by repository, rows by machine, and visible parents by pin group, avoiding repeated full-list scans during grouping. The snapshot is rebuilt on the next render, so live title, status, folder, and connection changes remain visible. Color assignment maintains running usage counts instead of rescanning every assigned color for each candidate. `nook-tabs` selects each tab's preferred terminal in one pass over panes, preserving the first agent, then first non-shell terminal, then first terminal in model order. Manual names keep priority.
 
-Run `node tests/render-performance.cjs` from the project root for render regression checks with a minimal GPUI mock. It covers tab selection, live updates, agent counts, balanced colors, and native collection read counts for 1 and 100 Spaces. This checks JavaScript behavior and call counts, not native layout, frame rate, or CPU usage. Also run `herdr-app check mods/nook-spaces` and `herdr-app check mods/nook-tabs`.
+Run `node tests/render-performance.cjs` from the project root for render regression checks with a minimal GPUI mock. It covers tab selection, live updates, agent counts, balanced colors, native collection read counts, and linear pane-field read bounds for 1, 100, and 1,000 Spaces. It also checks folder updates, pane order across tabs, worktree grouping, duplicate checkouts, pin partitions, and remote groups. This checks JavaScript behavior and call counts, not native layout, frame rate, or CPU usage. Also run `herdr-app check mods/nook-spaces` and `herdr-app check mods/nook-tabs`.
+
+A before/after comparison using the same GPUI mock and one terminal pane per Space counted reads of each pane's `tab` field (lower is better):
+
+| Spaces | Render before | Render after | Git poll before | Git poll after |
+| --- | ---: | ---: | ---: | ---: |
+| 100 | 15,150 | 100 | 5,150 | 200 |
+| 1,000 | 1,501,500 | 1,000 | 501,500 | 2,000 |
+
+The render also reads the native Spaces collection once instead of twice. These are operation counts, not frame-time or CPU measurements. Structural Space moves still use the existing command and retry path; the optimization targets folder lookup and grouping, not the cost of applying a reorder.
 
 These commands check project sources; they do not install them. To apply an update, review the installation dry run and destination differences using the installation steps above. After installing, check `herdr-app status`, inspect a `herdr-app shot` capture, and exercise tab titles, Space selection, pinning, dragging, editor launch, and remote machine status in the running `nook` layout. Native interaction and performance measurements require that separate runtime verification.
 
