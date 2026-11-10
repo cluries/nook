@@ -181,9 +181,6 @@ export default class Files extends View {
     if (key() !== this.context?.key) this.refresh(cx);
     const t = theme(), markdown = /\.(md|markdown|mdown|mkd)$/i.test(this.file ?? "");
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
-      .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().child("Files"))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.root?.split(/[\\/]/).pop() ?? "")))
       .child(v_flex().id("files-split-frame").w_full().flex_1().min_h(0)
         .on_size_change((size, cx) => { if (this.splitHeight !== size.height) { this.splitHeight = size.height; cx.notify(); } })
         .when(this.splitHeight > 0, el => el.child(v_resizable("nook-files-split").size_full()
