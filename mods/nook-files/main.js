@@ -299,7 +299,7 @@ export default class Files extends View {
           if (total > 0) { this.splitRatio = sizes[0] / total; localStorage.setItem("split.ratio", String(this.splitRatio)); }
         })
         .child(resizable_panel().size(Math.max(100, this.splitHeight * this.splitRatio)).size_range(100).child(v_flex().size_full().min_h(0)
-          .child(h_flex().h(34).flex_none().px(10).gap(12).items_center()
+          .child(h_flex().h(34).flex_none().px(10).gap(12).items_center().border_b(1).border_color(t.border)
             .child(h_flex().w(140).h(24).flex_none().px(6).gap(4).items_center().rounded(5).border_1().border_color(t.input)
               .child(Input.new(this.input).flex_1().min_w(0).text_size(11).text_color(t.foreground))
               .when(Boolean(this.query), el => el.child(div().id("files-search-clear").flex_none().text_size(15).text_color(t.muted).cursor_pointer()
