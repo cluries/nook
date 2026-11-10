@@ -151,7 +151,7 @@
                       "id": "files",
                       "type": "block",
                       "content": {
-                        "mod": "files"
+                        "mod": "nook-files"
                       }
                     },
                     {
