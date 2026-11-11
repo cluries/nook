@@ -14,9 +14,10 @@ function location() {
   return { cwd: pane?.cwd || f?.cwd || space?.folder, on, space: space?.id };
 }
 const key = () => JSON.stringify(location());
-const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
+const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html", svg: "xml" };
 const PER_FOLDER = 500, TOTAL = 5000;
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+const SVG = /\.svg$/i;
 function fileIcon(path, dir, open, dark) {
   const parts = path.toLowerCase().split("/"), name = parts[parts.length - 1];
   const table = dir ? "folderNames" : "fileNames";
@@ -70,6 +71,7 @@ async function directory(path, on) {
 export default class Files extends View {
   init(_props, cx) {
     this.previewMode = localStorage.getItem("markdown.previewMode") === "preview" ? "preview" : "code";
+    this.svgMode = localStorage.getItem("svg.previewMode") === "code" ? "code" : "preview";
     const savedRatio = Number(localStorage.getItem("split.ratio"));
     this.splitRatio = savedRatio > 0 && savedRatio < 1 ? savedRatio : 0.5;
     this.splitHeight = 0;
@@ -208,23 +210,30 @@ export default class Files extends View {
   }
 
   show(path, cx) {
-    this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.previewText = null; this.previewImage = null;
+    this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.previewText = null; this.previewImage = null; this.imageUnavailable = false;
     this.previewQuery = ""; this.previewResults = { results: [], total: 0 }; this.previewSearch.set_value("");
     const request = this.previewRequest = (this.previewRequest ?? 0) + 1;
     if (!path || !cx) return;
     const context = this.context, root = this.root, on = this.on;
-    if (IMAGE.test(path)) {
-      if (on) this.fileError = "Image preview is unavailable for remote files";
-      else if (window()?.platform !== "macos") this.fileError = "Image preview is available on macOS only";
-      else cx.spawn(async cx => {
+    const raster = IMAGE.test(path), vector = SVG.test(path);
+    if (raster && on) { this.fileError = "Image preview is unavailable for remote files"; return; }
+    if (raster && window()?.platform !== "macos") { this.fileError = "Image preview is available on macOS only"; return; }
+    // SVGs also keep a text preview, so remote files and other platforms fall through.
+    if (vector && (on || window()?.platform !== "macos")) this.imageUnavailable = true;
+    if ((raster || vector) && !on && window()?.platform === "macos") {
+      cx.spawn(async cx => {
         try {
           const original = await originalImage(`${root}/${path}`);
           if (this.previewRequest !== request || !this.current(context)) return;
           this.previewImage = original;
-        } catch { if (this.previewRequest === request && this.current(context)) this.fileError = "Cannot preview this image (unreadable or unsupported)"; }
+        } catch {
+          if (this.previewRequest !== request || !this.current(context)) return;
+          this.imageUnavailable = true;
+          if (!vector) this.fileError = "Cannot preview this image (unreadable or unsupported)";
+        }
         finally { cx.notify(); }
       });
-      return;
+      if (!vector) return;
     }
     cx.spawn(async cx => {
       try {
@@ -305,7 +314,10 @@ export default class Files extends View {
 
   render(cx) {
     if (key() !== this.context?.key) this.refresh(cx);
-    const t = theme(), markdown = /\.(md|markdown|mdown|mkd)$/i.test(this.file ?? "");
+    const t = theme(), isSvg = SVG.test(this.file ?? ""), markdown = /\.(md|markdown|mdown|mkd)$/i.test(this.file ?? "");
+    const previewUnavailable = isSvg && this.imageUnavailable;
+    const mode = isSvg ? (previewUnavailable ? "code" : this.svgMode) : this.previewMode;
+    const textVisible = Boolean(this.code) && (!isSvg || mode === "code");
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(v_flex().id("files-split-frame").w_full().flex_1().min_h(0)
         .on_size_change((size, cx) => { if (this.splitHeight !== size.height) { this.splitHeight = size.height; cx.notify(); } })
@@ -332,31 +344,38 @@ export default class Files extends View {
           )
         .child(resizable_panel().size_range(100).child(v_flex().size_full().min_h(0).overflow_hidden()
           .child(h_flex().h(34).flex_none().px(10).gap(12).items_center().border_b(1).border_color(t.border)
-            .when(Boolean(this.code), el => el.child(h_flex().w(140).h(24).flex_none().px(6).gap(4).items_center().rounded(5).border_1().border_color(t.input)
+            .when(textVisible, el => el.child(h_flex().w(140).h(24).flex_none().px(6).gap(4).items_center().rounded(5).border_1().border_color(t.input)
               .child(Input.new(this.previewSearch).flex_1().min_w(0).text_size(11).text_color(t.foreground))
               .when(Boolean(this.previewQuery), box => box.child(div().id("preview-search-clear").flex_none().cursor_pointer().text_size(15).text_color(t.muted).tooltip("Clear preview search")
                 .on_click((_e, cx) => { this.previewSearch.set_value(""); this.previewQuery = ""; this.previewResults = { results: [], total: 0 }; cx.notify(); }).child("×")))))
             .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.file ?? "Preview"))
-            .when(markdown, el => el.child(h_flex().h_full().flex_none().gap(14)
-              .children(["code", "preview"].map(mode => v_flex().id(`files-mode-${mode}`).h_full().cursor_pointer().justify_end()
-                .text_size(11).text_color(this.previewMode === mode ? t.foreground : t.dim)
-                .hover(s => s.text_color(t.foreground))
-                .on_click((_e, cx) => { this.previewMode = mode; localStorage.setItem("markdown.previewMode", mode); cx.notify(); })
-                .child(h_flex().flex_1().items_center().child(mode === "code" ? "Code" : "Preview"))
-                .child(div().h(2).bg(this.previewMode === mode ? t.accent : t.background)))))))
-          .child(this.code && this.previewQuery ? v_flex().id("preview-search-results").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(4)
+            .when(markdown || isSvg, el => el.child(h_flex().h_full().flex_none().gap(14)
+              .children(["code", "preview"].map(m => {
+                const disabled = previewUnavailable && m === "preview";
+                return v_flex().id(`files-mode-${m}`).h_full().justify_end().text_size(11).text_color(mode === m ? t.foreground : t.dim)
+                  .when(!disabled, item => item.cursor_pointer().hover(s => s.text_color(t.foreground))
+                    .on_click((_e, cx) => {
+                      if (isSvg) { this.svgMode = m; localStorage.setItem("svg.previewMode", m); }
+                      else { this.previewMode = m; localStorage.setItem("markdown.previewMode", m); }
+                      cx.notify();
+                    }))
+                  .when(disabled, item => item.tooltip("Preview unavailable for this file"))
+                  .child(h_flex().flex_1().items_center().child(m === "code" ? "Code" : "Preview"))
+                  .child(div().h(2).bg(mode === m ? t.accent : t.background));
+              })))))
+          .child(textVisible && this.previewQuery ? v_flex().id("preview-search-results").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(4)
             .child(div().text_size(11).text_color(t.muted).child(`${this.previewResults.total} matching lines${this.previewResults.total > 200 ? " · first 200 shown" : ""}`))
             .when(!this.previewResults.total, el => el.child(div().p(4).text_size(12).text_color(t.muted).child("No matching lines")))
             .children(this.previewResults.results.map(result => h_flex().gap(8).items_center().text_size(12)
               .child(div().w(44).flex_none().text_right().text_color(t.dim).child(String(result.line)))
               .child(h_flex().min_w(0).overflow_hidden().text_color(t.foreground)
                 .child(div().child(result.before)).child(div().bg(t.selection).font_semibold().child(result.match)).child(div().child(result.after)))))
-            : this.previewImage ? v_flex().id("files-image-frame").flex_1().min_h(0).p(12).items_center().justify_center()
+            : this.previewImage && (!isSvg || mode === "preview") ? v_flex().id("files-image-frame").flex_1().min_h(0).p(12).items_center().justify_center()
             .on_size_change((size, cx) => { if (this.imageSize.width !== size.width || this.imageSize.height !== size.height) { this.imageSize = size; cx.notify(); } })
             .when(this.imageSize.width > 24 && this.imageSize.height > 24, el => {
               const scale = Math.min((this.imageSize.width - 24) / this.previewImage.width, (this.imageSize.height - 24) / this.previewImage.height);
               return el.child(image(this.previewImage.path).w(this.previewImage.width * scale).h(this.previewImage.height * scale).flex_none());
-            }) : this.code ? (markdown && this.previewMode === "preview"
+            }) : textVisible ? (markdown && mode === "preview"
             ? div().id("files-markdown").flex_1().min_h(0).overflow_y_scrollbar().p(12).child(TextView.markdown("files-markdown-content", this.previewText))
             : Editor.new(this.code).flex_1().min_h(0))
             : div().p(12).text_color(t.dim).child(this.file ? (this.fileError || "Loading file…") : "Select a file to preview")))))));

@@ -1,31 +1,40 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
   <defs>
-    <linearGradient id="sky" x2="1" y2="1"><stop stop-color="#34302f"/><stop offset="1" stop-color="#171b1b"/></linearGradient>
-    <linearGradient id="glow" x2="0" y2="1"><stop stop-color="#e9b75c"/><stop offset="1" stop-color="#be7845"/></linearGradient>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#c3c5b1"/><stop offset="1" stop-color="#777e69"/></linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#aa7848"/><stop offset=".5" stop-color="#79502f"/><stop offset="1" stop-color="#34281f"/></linearGradient>
+    <linearGradient id="front" x1=".1" y1="0" x2=".8" y2="1"><stop stop-color="#a27142"/><stop offset=".5" stop-color="#603d28"/><stop offset="1" stop-color="#30241d"/></linearGradient>
     <clipPath id="frame"><rect width="320" height="200" rx="12"/></clipPath>
   </defs>
   <g clip-path="url(#frame)">
     <rect width="320" height="200" fill="url(#sky)"/>
-    <circle cx="253" cy="42" r="64" fill="#d8a451" opacity=".08"/>
-    <circle cx="253" cy="42" r="35" fill="#e5bc72" opacity=".12"/>
-    <circle cx="253" cy="42" r="18" fill="#ebc780"/>
-    <path d="M0 149 Q58 110 116 143 T238 134 T340 133 V200 H0Z" fill="#303d36"/>
-    <path d="M0 171 Q72 135 135 168 T260 154 T340 163 V200 H0Z" fill="#1f2e2a"/>
-    <path d="M0 190 Q80 165 150 187 T320 173 V200 H0Z" fill="#182320"/>
-    <!-- A little illuminated workspace tucked into the landscape. -->
-    <rect x="41" y="34" width="174" height="119" rx="10" fill="#111817" stroke="#796e59" stroke-width="2"/>
-    <rect x="48" y="41" width="160" height="105" rx="5" fill="#222b28"/>
-    <path d="M48 52 H208" stroke="#5a6554" stroke-width="2"/>
-    <circle cx="55" cy="47" r="2" fill="#d08463"/><circle cx="62" cy="47" r="2" fill="#e3b45f"/><circle cx="69" cy="47" r="2" fill="#9baa75"/>
-    <path d="M63 76 l8 7 -8 7 M77 90 h14" fill="none" stroke="#e8bd6c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M64 103 h50 M64 112 h37 M64 121 h59" stroke="#97a797" stroke-width="2" stroke-linecap="round" opacity=".65"/>
-    <path d="M145 132 V92 a22 22 0 0 1 44 0 v40Z" fill="url(#glow)"/>
-    <path d="M151 132 V93 a16 16 0 0 1 32 0 v39Z" fill="#30453c"/>
-    <path d="M167 77 v55 M151 103 h32" stroke="#dfb971" stroke-width="2"/>
-    <path d="M29 155 h197 l-9 7 H38Z" fill="#ad9876"/>
-    <path d="M42 162 h172" stroke="#4b5045" stroke-width="3" stroke-linecap="round"/>
-    <path d="M234 154 q-10 -17 -2 -29 q8 10 2 29 M238 154 q2 -22 14 -26 q0 16 -14 26" fill="#829876"/>
-    <path d="M230 153 h15 l-3 13 h-9Z" fill="#bd805d"/>
-    <circle cx="119" cy="24" r="1.5" fill="#ebc780"/><circle cx="205" cy="24" r="1" fill="#ebc780"/><circle cx="288" cy="91" r="1.5" fill="#ebc780"/>
+    <path d="M0 132 Q55 117 105 130 T208 125 T320 129 V200 H0Z" fill="#747c61"/>
+    <path d="M0 160 Q76 148 155 156 T320 151 V200 H0Z" fill="#4b5643"/>
+    <path d="M0 180 Q120 169 320 177 V200 H0Z" fill="#323c31"/>
+    <!-- Far legs and tail. -->
+    <path d="M149 130 L155 153 L149 177 L143 181 L154 182 L160 177 L166 150 L166 135 M255 123 L263 146 L255 171 L248 177 L258 179 L264 174 L274 146 L269 125" fill="#35291f"/>
+    <path d="M274 70 Q286 75 290 80 L300 81 Q302 84 298 85 L286 84 L277 80" fill="#493222"/>
+    <!-- Back, deep belly, and hindquarters follow the reference's broad profile. -->
+    <path d="M116 69 C126 43 146 32 171 31 C205 30 246 38 269 51 C281 58 284 70 280 87 L275 113 Q273 126 263 137 L257 154 L253 173 L257 178 L245 180 L240 176 L243 153 L242 136 Q230 144 217 146 Q196 146 181 137 L169 139 L161 154 L158 175 L161 180 L148 181 L145 177 L148 151 L144 136 Q128 136 114 125 L103 109Z" fill="url(#body)"/>
+    <path d="M225 52 Q248 50 262 61 Q271 72 266 91 Q265 107 252 122 Q245 129 241 141 Q225 146 213 140 Q227 133 232 115 Q239 93 235 74 Q233 61 225 52Z" fill="#b07d4a" opacity=".3"/>
+    <path d="M177 104 Q184 122 198 131 Q216 140 232 128 Q222 144 211 147 Q191 148 177 137 L166 138Z" fill="#241f19" opacity=".75"/>
+    <!-- Tall shoulder, heavy neck, and long shaggy underside. -->
+    <path d="M107 72 C115 54 126 40 145 34 Q158 29 171 32 Q157 40 156 56 Q153 70 159 84 Q167 101 164 119 L169 137 L165 147 L160 143 L156 154 L151 146 L146 155 L141 146 L136 153 L131 145 L125 151 L121 141 L114 146 L110 136 L104 141 L100 131 L94 134 L90 124 L84 127 L79 115 L82 94 Q89 79 107 72Z" fill="url(#front)"/>
+    <path d="M112 74 Q99 70 89 76 Q80 72 72 81 Q65 83 61 92 Q56 99 61 112 L66 117 L66 126 L71 129 L72 136 L78 139 L82 146 L87 142 L92 151 L97 148 L99 139 L105 135 L112 121 L120 105Z" fill="#3a281d"/>
+    <path d="M62 109 Q65 116 69 119 L72 130 Q75 135 82 134 L86 130 L83 123 Q77 121 75 114Z" fill="#281f19"/>
+    <!-- Horn curves upward from the dense forehead. -->
+    <path d="M82 89 Q89 87 90 81 Q91 77 87 72 Q96 75 97 81 Q98 89 90 94Z" fill="#d3c4a3"/>
+    <path d="M76 101 l3 -1" stroke="#d2b78d" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M71 124 l4 1" stroke="#9a8064" stroke-width="1.3" stroke-linecap="round"/>
+    <!-- Irregular strands describe the textured shoulder and mane. -->
+    <g fill="none" stroke-linecap="round">
+      <g stroke="#3b291d" stroke-width="2" opacity=".7">
+        <path d="M128 49 q-7 9 -7 18 l-4 9 M138 43 q-6 11 -5 19 l-5 10 M148 39 q-5 11 -4 20 l-5 12 M158 37 q-5 10 -3 19 l-4 11"/>
+        <path d="M113 70 q-8 10 -7 20 l-5 8 M123 67 q-7 11 -6 20 l-5 10 M134 64 q-7 12 -6 22 l-5 11 M145 63 q-6 12 -5 22 l-4 11 M154 65 q-4 10 -1 20 l-4 10"/>
+        <path d="M99 91 q-6 10 -4 19 l-4 8 M110 91 q-6 11 -4 21 l-4 10 M121 91 q-5 12 -3 22 l-4 11 M132 91 q-5 12 -3 23 l-4 11 M143 92 q-4 11 -2 22 l-4 12 M153 96 q-3 10 -1 19 l-4 12"/>
+      </g>
+      <g stroke="#c48b52" stroke-width="1.3" opacity=".5"><path d="M123 54 l-6 15 M133 47 l-5 14 M144 43 l-5 13 M109 77 l-5 13 M120 74 l-5 13 M131 72 l-5 13 M142 72 l-4 13 M100 100 l-3 12 M111 100 l-3 13 M122 100 l-3 13 M134 100 l-3 13"/></g>
+    </g>
+    <path d="M151 180 l10 -1 M244 179 l12 -2" stroke="#b4a17f" stroke-width="2" stroke-linecap="round"/>
+    <path d="M15 171 l4 -9 M23 174 l5 -8 M288 169 l4 -9 M299 174 l5 -10" stroke="#a3a484" opacity=".6" stroke-width="1.5"/>
   </g>
 </svg>
