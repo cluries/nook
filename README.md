@@ -10,6 +10,8 @@ Nook is a personal project for managing Herdr App themes, layouts, and mods.
 
 ## Development and installation
 
+The `nook` layout includes an illustrated SVG preview for Settings → Look → Layout. The layout references `layouts/nook.svg`; keep the SVG and `layouts/nook.json` together when installing or updating. After installation, open Settings → Look and check the Nook card.
+
 Herdr App loads its configuration from `~/.config/herdr-app/`, not directly from this project. The two directories currently contain separate files. The installation script copies the project's themes, layouts, and mods without deleting other files in the destination:
 
 ```sh

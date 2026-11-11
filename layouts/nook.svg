@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200">
+  <defs>
+    <linearGradient id="sky" x2="1" y2="1"><stop stop-color="#34302f"/><stop offset="1" stop-color="#171b1b"/></linearGradient>
+    <linearGradient id="glow" x2="0" y2="1"><stop stop-color="#e9b75c"/><stop offset="1" stop-color="#be7845"/></linearGradient>
+    <clipPath id="frame"><rect width="320" height="200" rx="12"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="320" height="200" fill="url(#sky)"/>
+    <circle cx="253" cy="42" r="64" fill="#d8a451" opacity=".08"/>
+    <circle cx="253" cy="42" r="35" fill="#e5bc72" opacity=".12"/>
+    <circle cx="253" cy="42" r="18" fill="#ebc780"/>
+    <path d="M0 149 Q58 110 116 143 T238 134 T340 133 V200 H0Z" fill="#303d36"/>
+    <path d="M0 171 Q72 135 135 168 T260 154 T340 163 V200 H0Z" fill="#1f2e2a"/>
+    <path d="M0 190 Q80 165 150 187 T320 173 V200 H0Z" fill="#182320"/>
+    <!-- A little illuminated workspace tucked into the landscape. -->
+    <rect x="41" y="34" width="174" height="119" rx="10" fill="#111817" stroke="#796e59" stroke-width="2"/>
+    <rect x="48" y="41" width="160" height="105" rx="5" fill="#222b28"/>
+    <path d="M48 52 H208" stroke="#5a6554" stroke-width="2"/>
+    <circle cx="55" cy="47" r="2" fill="#d08463"/><circle cx="62" cy="47" r="2" fill="#e3b45f"/><circle cx="69" cy="47" r="2" fill="#9baa75"/>
+    <path d="M63 76 l8 7 -8 7 M77 90 h14" fill="none" stroke="#e8bd6c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M64 103 h50 M64 112 h37 M64 121 h59" stroke="#97a797" stroke-width="2" stroke-linecap="round" opacity=".65"/>
+    <path d="M145 132 V92 a22 22 0 0 1 44 0 v40Z" fill="url(#glow)"/>
+    <path d="M151 132 V93 a16 16 0 0 1 32 0 v39Z" fill="#30453c"/>
+    <path d="M167 77 v55 M151 103 h32" stroke="#dfb971" stroke-width="2"/>
+    <path d="M29 155 h197 l-9 7 H38Z" fill="#ad9876"/>
+    <path d="M42 162 h172" stroke="#4b5045" stroke-width="3" stroke-linecap="round"/>
+    <path d="M234 154 q-10 -17 -2 -29 q8 10 2 29 M238 154 q2 -22 14 -26 q0 16 -14 26" fill="#829876"/>
+    <path d="M230 153 h15 l-3 13 h-9Z" fill="#bd805d"/>
+    <circle cx="119" cy="24" r="1.5" fill="#ebc780"/><circle cx="205" cy="24" r="1" fill="#ebc780"/><circle cx="288" cy="91" r="1.5" fill="#ebc780"/>
+  </g>
+</svg>
