@@ -288,17 +288,18 @@ export default class Files extends View {
         .when(!entry.dir && this.hoveredFile === path, el => el.child(h_flex().id(`insert-path-${path}`).size(20).flex_none().items_center().justify_center().rounded(4)
           .cursor_pointer().hover(s => s.bg(t.raised)).tooltip("Insert relative path")
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .on_click((_e, cx) => {
-            cx.stop_propagation();
-            const terminal = focused()?.terminal;
-            if (!terminal || !this.current(this.context)) {
-              notify({ title: "Could not insert path", body: "Focus the target terminal and try again.", level: "error" });
-              return;
-            }
-            cx.write_to_clipboard(` ${path} `);
-            run("pane.focus", { terminal });
-            run("terminal.paste");
-          }).child(svg("mods/nook-files-menu/insert-path.svg").size(14).text_color(t.muted))));
+          .on_click((_e, cx) => { cx.stop_propagation(); this.insertPath(path, cx); }).child(svg("mods/nook-files-menu/insert-path.svg").size(14).text_color(t.muted))));
+  }
+
+  insertPath(path, cx) {
+    const terminal = focused()?.terminal;
+    if (!terminal || !this.current(this.context)) {
+      notify({ title: "Could not insert path", body: "Focus the target terminal and try again.", level: "error" });
+      return;
+    }
+    cx.write_to_clipboard(` ${path} `);
+    run("pane.focus", { terminal });
+    run("terminal.paste");
   }
 
   rows(prefix, depth, out, t) {
@@ -348,7 +349,12 @@ export default class Files extends View {
               .child(Input.new(this.previewSearch).flex_1().min_w(0).text_size(11).text_color(t.foreground))
               .when(Boolean(this.previewQuery), box => box.child(div().id("preview-search-clear").flex_none().cursor_pointer().text_size(15).text_color(t.muted).tooltip("Clear preview search")
                 .on_click((_e, cx) => { this.previewSearch.set_value(""); this.previewQuery = ""; this.previewResults = { results: [], total: 0 }; cx.notify(); }).child("×")))))
-            .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(this.file ?? "Preview"))
+            .child(div().flex_1().min_w(0).truncate().text_ellipsis_start().text_size(12).text_color(t.muted).child(this.file ?? "Preview"))
+            .when(Boolean(this.file), el => el.child(h_flex().id("preview-insert-path").size(20).flex_none().items_center().justify_center().rounded(4)
+              .cursor_pointer().hover(s => s.bg(t.raised)).tooltip("Insert relative path")
+              .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+              .on_click((_e, cx) => { cx.stop_propagation(); this.insertPath(this.file, cx); })
+              .child(svg("mods/nook-files-menu/insert-path.svg").size(14).text_color(t.muted))))
             .when(markdown || isSvg, el => el.child(h_flex().h_full().flex_none().gap(14)
               .children(["code", "preview"].map(m => {
                 const disabled = previewUnavailable && m === "preview";
