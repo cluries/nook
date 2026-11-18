@@ -37,7 +37,6 @@ function locations(sp, ps) {
     key: JSON.stringify([s.machine ?? null, folders.get(s.id)]),
   }]));
 }
-const rowHeight = () => 48;
 const RAIL_CELL = 32;
 const railCell = (el) => h_flex().flex_none().justify_center().child(el);
 const base = (path) => path.replace(/\/+$/, "").split("/").pop();
@@ -622,7 +621,7 @@ export default class Spaces extends View {
       const head = h_flex().id(`machine-${m ?? "local"}`).h(26).flex_none().px(collapsed ? 0 : 8).gap(7).items_center().text_size(11).text_color(t.dim)
         .when(Boolean(m) && collapsed, el => el.mt(8))
         .when(collapsed, el => el.w(RAIL_CELL).justify_center().rounded(6).tooltip(m ? `${m} · ${connected ? "connected" : (machine?.state ?? "asleep").replace(/_/g, " ")}` : "This computer"))
-        .cursor_pointer().hover(s => s.bg(t.hover))
+        .cursor_pointer()
         .on_click((_e, cx) => {
           folded ? this.folded.delete(m) : this.folded.add(m);
           localStorage.setItem("machines.folded", JSON.stringify([...this.folded]));
@@ -718,8 +717,8 @@ export default class Spaces extends View {
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
-      .px(8)
-      .h(rowHeight({ tree }))
+      .px(6)
+      .h(40)
       .flex_none()
       .justify_center()
       .rounded(8)
