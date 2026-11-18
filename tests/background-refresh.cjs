@@ -83,17 +83,15 @@ async function main() {
   assert.equal(notifications, 3, 'removed machines must redraw');
 
   let tick, active = true, width = 268, redraws = 0;
-  const footer = load('nook-footer', {
-    window: () => ({ active }), layout: () => ({ id: 'sidebar', size: { px: width } }),
-  });
-  footer.init({}, { timer: { every(ms, fn) { assert.equal(ms, 1000); tick = fn; } } });
+  const chrome = load('nook-chrome', { window: () => ({ active }), layout: () => ({ id: 'sidebar', size: { px: width } }) });
+  chrome.init({}, { spawn() {}, timer: { every(ms, fn) { assert.equal(ms, 1000); tick = fn; } } });
   const clockCx = { notify() { redraws++; } };
   tick(clockCx);
-  width = 159; tick(clockCx);
+  width = 100; tick(clockCx);
   width = 268; active = false; tick(clockCx);
   active = true; tick(clockCx);
-  assert.equal(redraws, 2, 'only an active window with a visible clock needs timer redraws');
-  console.log('Background refresh checks passed (slow Git, watcher follow-up, machine coalescing, unchanged data, recovery, clock visibility).');
+  assert.equal(redraws, 2, 'only an active window with a visible clock needs redraws');
+  console.log('Background refresh checks passed (slow Git, watcher follow-up, machine coalescing, unchanged data, recovery, clock refresh).');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

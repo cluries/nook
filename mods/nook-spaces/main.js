@@ -309,10 +309,10 @@ export default class Spaces extends View {
     }
     return h_flex().px(4).pb(5).gap(6).items_center()
       .tooltip("CPU temperature · last 5 minutes · 0–120 °C · sampled every 2 seconds")
-      .child(div().flex_1().min_w(0).h(27).rounded(5).bg(t.chrome).border_1().border_color(t.border)
+      .child(div().flex_1().min_w(0).h(27).rounded(5).bg(t.canvas).border_1().border_color(t.canvas)
         .when(points.length > 1, el => el.child(globalThis.window.paint_path(path.build(), t.ansi3).size_full())))
       .child(h_flex().w(60).h(27).px(6).flex_none().items_center().justify_end()
-        .rounded(5).bg(t.chrome).border_1().border_color(t.border).text_size(10).text_color(t.foreground)
+        .rounded(5).bg(t.canvas).border_1().border_color(t.canvas).text_size(10).text_color(t.foreground)
         .child(metric.temperature ? `${metric.temperature} °C` : "Unavailable"));
   }
 
@@ -655,7 +655,7 @@ export default class Spaces extends View {
       const stored = available ? this.metrics[m ?? ""] : null;
       const metric = stored?.starting ? undefined : stored;
       const status = metric === undefined ? "Loading metrics…" : "Metrics unavailable";
-      const tile = (label, value, color) => h_flex().when(label === "CPU", el => el.w(76).flex_none()).when(label !== "CPU", el => el.flex_1()).min_w(0).h(27).px(8).gap(5).items_center().rounded(5).bg(t.chrome).border_1().border_color(t.border)
+      const tile = (label, value, color) => h_flex().when(label === "CPU", el => el.w(76).flex_none()).when(label !== "CPU", el => el.flex_1()).min_w(0).h(27).px(8).gap(5).items_center().rounded(5).bg(t.canvas).border_1().border_color(t.canvas)
         .child(div().size(5).flex_none().rounded(3).bg(color))
         .child(div().flex_none().text_size(10).text_color(t.dim).child(label))
         .child(div().flex_1().min_w(0).text_size(10).text_color(t.foreground).truncate().child(value));

@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { theme, run, window, shared, setShared, layout } from "herdr";
+import { agents, layout, theme, window } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -11,33 +11,30 @@ function find(node, id) {
   return null;
 }
 
-// The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
-const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
-
-// To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
-function toggleSidebar() {
-  const width = find(layout(), "sidebar")?.size?.px;
-  if (!narrow()) setShared("sidebar.width", width);
-  // Mods edited before the rail went by width still read the flag.
-  setShared("sidebar.collapsed", !narrow());
-  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
-}
-
 export default class WorkspaceChrome extends View {
-  button(id, label, action) {
-    const t = theme();
-    return div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(action).child(label);
+  init(_props, cx) {
+    cx.timer.every(1000, cx => {
+      if (window().active && (find(layout(), "sidebar")?.size?.px ?? 268) >= 160) cx.notify();
+    });
   }
+
   render() {
-    const t = theme();
-    const collapsed = narrow();
-    return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(4).items_center().text_size(13.5)
-      .when(window()?.platform === "macos" && !window()?.fullscreen && !collapsed, el => el.pl(76))
-      .when(!collapsed, el => el.child(div().flex_1()))
-      .when(!collapsed, el => el.child(this.button("search", svg("mods/workspace-chrome/search.svg").size(15), () => run("mod.open", { name: "picker" }))))
-      .when(!collapsed, el => el.child(this.button("palette", svg("mods/terminals-bar/command.svg").size(15), () => run("app.palette")).tooltip("Command Palette")))
-      // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
-      .when(!(collapsed && window()?.platform === "macos"), el => el.child(this.button("sidebar-toggle", svg("mods/workspace-chrome/sidebar.svg").size(15), toggleSidebar)));
+    const t = theme(), w = window();
+    const collapsed = (find(layout(), "sidebar")?.size?.px ?? 268) < 160;
+    const now = new Date();
+    const time = [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map(value => String(value).padStart(2, "0")).join(":");
+    const needs = agents().filter(a => a.status === "blocked").length;
+    return h_flex().size_full().bg(t.chrome).pl(14).pr(10).gap(8).items_center()
+      .when(w?.platform === "macos" && !w.fullscreen && !collapsed, el => el.pl(76))
+      .when(!collapsed, el => el.child(div().flex_1()).child(h_flex().gap(4).items_center().flex_none().text_size(12).text_color(t.dim)
+        .child(svg("mods/workspace-chrome/clock.svg").size(15))
+        .child(h_flex().children([...time].map(char => div().w(char === ":" ? 4 : 8).flex_none().flex().justify_center().child(char)))))
+        .child(h_flex().h(26).px(6).gap(4).flex_none().items_center().rounded(5)
+          .bg(needs > 0 ? t.blocked + "26" : t.chrome)
+          .text_color(needs > 0 ? t.blocked : t.dim).text_size(12).font_semibold()
+          .tooltip(`${needs} agents need attention`)
+          .child(svg("mods/nook-tabs/lens.svg").size(15))
+          .child(div().h_full().flex().items_center().child(String(needs)))));
   }
 }
