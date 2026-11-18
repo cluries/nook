@@ -319,7 +319,7 @@ export default class Files extends View {
     const previewUnavailable = isSvg && this.imageUnavailable;
     const mode = isSvg ? (previewUnavailable ? "code" : this.svgMode) : this.previewMode;
     const textVisible = Boolean(this.code) && (!isSvg || mode === "code");
-    return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
+    return v_flex().id("files").size_full().min_h(0).rounded(8).overflow_hidden().bg(t.background).text_color(t.foreground).text_size(13)
       .child(v_flex().id("files-split-frame").w_full().flex_1().min_h(0)
         .on_size_change((size, cx) => { if (this.splitHeight !== size.height) { this.splitHeight = size.height; cx.notify(); } })
         .when(this.splitHeight > 0, el => el.child(v_resizable("nook-files-split").size_full()

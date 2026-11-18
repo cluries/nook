@@ -108,16 +108,16 @@
                 "tab": "active",
                 "pane": {
                   "gap": 8,
-                  "radius": 10,
+                  "radius": 8,
                   "background": "background",
                   "lone": true,
                   "border": {
                     "width": 1,
-                    "color": "border"
+                    "color": "background"
                   },
                   "focus": {
                     "width": 1,
-                    "color": "border"
+                    "color": "surface"
                   },
                   "header": {
                     "content": {
@@ -156,7 +156,7 @@
                       "id": "changes",
                       "type": "block",
                       "content": {
-                        "mod": "changes"
+                        "mod": "nook-changes"
                       }
                     }
                   ]
