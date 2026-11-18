@@ -23,6 +23,8 @@ Project files replace corresponding destination files when their contents differ
 
 Herdr updates its built-in mods and layouts. To customize one, first copy it under a new name and have the custom layout reference the custom mod. Symbolic links and hot reload have not yet been verified in this project.
 
+Terminal panes use the same border color whether focused or not. After updating the layout, validate its JSON, review the installation dry run, install it, and check `herdr-app status`; inspect split panes and switch focus between them in the running app.
+
 ## Automatic tab names
 
 Each terminal pane's top bar shows its current Git branch when Herdr reports one, alongside the existing title, folder, status and pane controls. The branch follows that pane's current folder and displays its full name on one line without a fixed width cap or ellipsis. After updating, review the installation dry run, install the changes, run `herdr-app check mods/nook-pane`, and check `herdr-app status`. In the `nook` layout, verify branches in different split panes, a non-repository folder, branch changes, and the existing split, zoom and close controls. The custom header is a snapshot of Herdr's built-in `pane` mod; compare it with upstream when updating Herdr.

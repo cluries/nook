@@ -117,7 +117,7 @@
                   },
                   "focus": {
                     "width": 1,
-                    "color": "accent"
+                    "color": "border"
                   },
                   "header": {
                     "content": {
