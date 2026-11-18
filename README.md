@@ -19,6 +19,8 @@ python3 scripts/install.py --dry-run
 python3 scripts/install.py
 ```
 
+Gruvbox Dark uses subdued border and input colors for panel separators and controls. Its selected color matches the active tab surface across Spaces, Agents, Files, and other selection highlights. Spaces machine cards use a subtle outline so the selected Space remains visible. After updating the theme, validate its JSON, review the installation dry run, install it, and check `herdr-app status` and `herdr-app shot` in the running layout.
+
 Project files replace corresponding destination files when their contents differ; files that exist only in the destination are preserved. Use the dry run to review the files that will be installed. The script refuses to replace a destination symlink or other non-regular file. `--force` remains accepted for compatibility but is no longer needed. By default, the script uses `HERDR_APP_HOME` if set, or `~/.config/herdr-app` otherwise. Use `--home <directory>` to specify a destination. After installing a theme, select it in Herdr's theme picker.
 
 Herdr updates its built-in mods and layouts. To customize one, first copy it under a new name and have the custom layout reference the custom mod. Symbolic links and hot reload have not yet been verified in this project.

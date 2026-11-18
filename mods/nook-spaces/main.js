@@ -655,7 +655,7 @@ export default class Spaces extends View {
       const stored = available ? this.metrics[m ?? ""] : null;
       const metric = stored?.starting ? undefined : stored;
       const status = metric === undefined ? "Loading metrics…" : "Metrics unavailable";
-      const tile = (label, value, color) => h_flex().when(label === "CPU", el => el.w(76).flex_none()).when(label !== "CPU", el => el.flex_1()).min_w(0).h(27).px(8).gap(5).items_center().rounded(5).bg(t.chrome)
+      const tile = (label, value, color) => h_flex().when(label === "CPU", el => el.w(76).flex_none()).when(label !== "CPU", el => el.flex_1()).min_w(0).h(27).px(8).gap(5).items_center().rounded(5).bg(t.chrome).border_1().border_color(t.border)
         .child(div().size(5).flex_none().rounded(3).bg(color))
         .child(div().flex_none().text_size(10).text_color(t.dim).child(label))
         .child(div().flex_1().min_w(0).text_size(10).text_color(t.foreground).truncate().child(value));
@@ -666,7 +666,7 @@ export default class Spaces extends View {
         .when(!metric, el => el.child(div().px(4).text_size(10).text_color(t.dim).child(status)));
       const items = [cell(head), ...(!collapsed && !folded ? [metricsRow, ...(metric?.mac ? [this.temperatureRow(m ?? "", metric, t)] : [])] : []), ...(!collapsed && rebuilt || folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
       if (collapsed) return items;
-      return [v_flex().id(`machine-card-${m ?? "local"}`).flex_none().min_w(0).p(4).rounded(8).bg(t.surface)
+      return [v_flex().id(`machine-card-${m ?? "local"}`).flex_none().min_w(0).p(4).rounded(8).bg(t.chrome).border_1().border_color(t.border)
         .when(Boolean(m), el => el.mt(8)).children(items)];
     });
   }
